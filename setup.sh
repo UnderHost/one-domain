@@ -1,3 +1,40 @@
+#!/bin/bash
+
+# Check if the script should create a backup
+while getopts "b" opt; do
+    case $opt in
+        b)
+            backup=true
+            ;;
+        *)
+            echo "Invalid option. Usage: $0 [-b]"
+            exit 1
+            ;;
+    esac
+done
+
+# Backup existing configurations if the backup flag is set
+if [ "$backup" = true ]; then
+    echo "Backing up existing configurations..."
+    backup_dir="/root/backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
+    
+    if [[ -f /etc/nginx/nginx.conf ]]; then
+        cp /etc/nginx/nginx.conf "$backup_dir/nginx.conf"
+    fi
+    
+    if [[ -f /etc/my.cnf.d/optimizations.cnf ]]; then
+        cp /etc/my.cnf.d/optimizations.cnf "$backup_dir/optimizations.cnf"
+    fi
+    
+    if [[ -f /etc/php-fpm.d/www.conf ]]; then
+        cp /etc/php-fpm.d/www.conf "$backup_dir/www.conf"
+    fi
+    
+    echo "Configurations have been backed up to $backup_dir"
+fi
+
+
 # Check the operating system and install required packages
 if [[ $(command -v yum) ]]; then
     # CentOS
@@ -71,6 +108,39 @@ elif [[ $(command -v apt) ]]; then
     apt-get -y install php-gd php-xml php-mbstring php-zip php-bcmath php-json php-curl php-opcache
 fi
 
+if [[ $(command -v firewall-cmd) ]]; then
+    # CentOS
+    firewall-cmd --zone=public --add-service=http --permanent
+    firewall-cmd --zone=public --add-service=https --permanent
+    firewall-cmd --zone=public --add-service=mysql --permanent
+    firewall-cmd --zone=public --add-service=ftp --permanent
+    firewall-cmd --reload
+elif [[ $(command -v ufw) ]]; then
+    # Debian or Ubuntu
+    ufw allow 'Nginx Full'
+    ufw allow 'MariaDB'
+    ufw allow 'OpenSSH'
+    ufw allow '20/tcp'
+    ufw allow '21/tcp'
+    ufw allow '990/tcp'
+    ufw allow '40000:50000/tcp'
+    echo "y" | ufw enable
+fi
+
+# Install Certbot and configure SSL/TLS for Nginx
+echo "Installing Certbot and configuring SSL/TLS..."
+if [[ $(command -v yum) ]]; then
+    # CentOS
+    yum -y install certbot python3-certbot-nginx
+elif [[ $(command -v apt) ]]; then
+    # Debian or Ubuntu
+    apt-get -y install certbot python3-certbot-nginx
+fi
+
+certbot --nginx -d $main_domain --non-interactive --agree-tos --email your@email.com --redirect
+
+
+
 # Install ionCube Loader
 echo "Installing ionCube Loader..."
 php_version=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
@@ -104,10 +174,10 @@ sed -i "s/pm.max_spare_servers = .*/pm.max_spare_servers = $(($max_worker_proces
 echo "Optimizing PHP configuration..."
 cat << EOF > /etc/php.d/custom.ini
 memory_limit = $(($ram_mb/8))M
-max_execution_time = 60
-max_input_time = 60
-post_max_size = 64M
-upload_max_filesize = 64M
+max_execution_time = 300
+max_input_time = 120
+post_max_size = 784M
+upload_max_filesize = 2048M
 date.timezone = UTC
 EOF
 
@@ -126,13 +196,16 @@ echo "Enter main domain:"
 read main_domain
 echo "Enter MySQL root password:"
 read -s mysql_root_password
-mysql -u root -p$mysql_root_password -e "CREATE DATABASE IF NOT EXISTS $main_domain"
+echo "Enter the name for the new MySQL database:"
+read db_name
+mysql -u root -p$mysql_root_password -e "CREATE DATABASE IF NOT EXISTS $db_name"
 echo "Enter MySQL user for $main_domain:"
 read mysql_user
 echo "Enter password for $mysql_user:"
 read -s mysql_user_password
 mysql -u root -p$mysql_root_password -e "CREATE USER '$mysql_user'@'localhost' IDENTIFIED BY '$mysql_user_password'"
-mysql -u root -p$mysql_root_password -e "GRANT ALL PRIVILEGES ON $main_domain.* TO '$mysql_user'@'localhost'"
+mysql -u root -p$mysql_root_password -e "GRANT ALL PRIVILEGES ON $db_name.* TO '$mysql_user'@'localhost'"
+
 
 # Create FTP user and directory for main domain
 echo "Enter FTP username for $main_domain:"
@@ -152,7 +225,7 @@ echo "<?php phpinfo(); ?>" > /var/www/$main_domain/html/info.php
 public_html=$(grep "^$main_domain:" /etc/userdomains | awk '{print "/home/"$2"/public_html"}')
 
 # Create text file with login information
-echo -e "Domain: $main_domain\nPublic HTML Directory: /var/www/$main_domain/html\nMySQL User: $mysql_user\nMySQL Password: $mysql_user_password\nFTP User: $ftp_user\nFTP Password: $ftp_password" > /root/login_info.txt
+echo -e "Domain: $main_domain\nPublic HTML Directory: /var/www/$main_domain/html\nMySQL Database: $db_name\nMySQL User: $mysql_user\nMySQL Password: $mysql_user_password\nFTP User: $ftp_user\nFTP Password: $ftp_password" > /root/login_info.txt
 
 echo "UnderHost.com one-domain setup, domain configuration and optimization completed successfully. Login information saved to /root/login_info.txt."
 
