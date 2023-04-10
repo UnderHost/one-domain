@@ -29,10 +29,13 @@ To run the script on your server, execute the following command:
 
 ```bash
 curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash
+```
 
 To create a backup of the existing configurations before running the script, use the -b flag:
 
+```bash
 curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- -b
+```
 
 ## License
 ### This script is released under the GNU General Public License v3.0 or later.
