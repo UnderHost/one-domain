@@ -115,7 +115,34 @@ run_install_configure_redis_cache() {
 }
 
 run_disable_unnecessary_services() {
-  echo "Please list the services you want to disable."
+  if [[ $OS == "CentOS Linux" ]]; then
+    systemctl disable postfix
+    systemctl disable chronyd
+    systemctl disable rpcbind.socket
+    systemctl disable rpcbind.target
+    systemctl disable nfs-client.target
+    systemctl disable rpc-statd-notify.service
+    systemctl disable rpc-statd.service
+    systemctl disable kdump.service
+    systemctl disable cups.service
+    systemctl disable cups-browsed.service
+    systemctl disable avahi-daemon.socket
+    systemctl disable avahi-daemon.service
+    echo "The most common unnecessary services have been disabled."
+  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
+    systemctl disable ntp
+    systemctl disable cups
+    systemctl disable cups-browsed
+    systemctl disable avahi-daemon.socket
+    systemctl disable avahi-daemon.service
+    systemctl disable remote-fs.target
+    systemctl disable nfs-client.target
+    systemctl disable rpcbind.service
+    systemctl disable rpcbind.socket
+    systemctl disable exim4
+    systemctl disable cron
+    echo "The most common unnecessary services have been disabled."
+  fi
 }
 
 run_setup_automatic_updates() {
@@ -147,6 +174,30 @@ run_enable_selinux_or_apparmor() {
     systemctl enable apparmor
     systemctl start apparmor
     echo "AppArmor has been enabled."
+  fi
+}
+
+run_enable_resource_limits_and_process_control() {
+  if [[ $OS == "CentOS Linux" ]]; then
+    echo "* hard core 0" >> /etc/security/limits.conf
+    echo "root hard nofile 65535" >> /etc/security/limits.conf
+    echo "* hard nofile 65535" >> /etc/security/limits.conf
+    echo "root soft stack unlimited" >> /etc/security/limits.conf
+    echo "* soft stack unlimited" >> /etc/security/limits.conf
+    echo "session required pam_limits.so" >> /etc/pam.d/common-session
+    echo "fs.file-max = 2097152" >> /etc/sysctl.conf
+    sysctl -p
+    echo "Resource limits and process control have been enabled."
+  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
+    echo "* hard core 0" >> /etc/security/limits.conf
+    echo "root hard nofile 65535" >> /etc/security/limits.conf
+    echo "* hard nofile 65535" >> /etc/security/limits.conf
+    echo "root soft stack unlimited" >> /etc/security/limits.conf
+    echo "* soft stack unlimited" >> /etc/security/limits.conf
+    echo "session required pam_limits.so" >> /etc/pam.d/common-session
+    echo "fs.file-max = 2097152" >> /etc/sysctl.conf
+    sysctl -p
+    echo "Resource limits and process control have been enabled."
   fi
 }
 
