@@ -65,6 +65,39 @@ sed -i "s/pm.start_servers = .*/pm.start_servers = $(($max_worker_processes/2))/
 sed -i "s/pm.min_spare_servers = .*/pm.min_spare_servers = $(($max_worker_processes/4))/" /etc/php-fpm.d/www.conf
 sed -i "s/pm.max_spare_servers = .*/pm.max_spare_servers = $(($max_worker_processes/2))/" /etc/php-fpm.d/www.conf
 
+# Install ionCube Loader
+echo "Installing ionCube Loader..."
+php_version=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
+ioncube_url="https://downloads.ioncube.com/loader_downloads/ioncube_loaders_lin_x86-64.tar.gz"
+wget $ioncube_url -O /tmp/ioncube_loaders.tar.gz
+tar -zxvf /tmp/ioncube_loaders.tar.gz -C /tmp/
+ioncube_dir=$(find /tmp/ -name "ioncube_*" -type d)
+cp $ioncube_dir/ioncube_loader_lin_$php_version.so /usr/lib64/php/modules/
+cat << EOF > /etc/php.d/00-ioncube.ini
+zend_extension = /usr/lib64/php/modules/ioncube_loader_lin_$php_version.so
+EOF
+
+# Install common PHP extensions
+echo "Installing common PHP extensions..."
+if [[ $(command -v yum) ]]; then
+    # CentOS
+    yum -y install php-gd php-xml php-mbstring php-zip php-bcmath php-json php-curl php-opcache
+elif [[ $(command -v apt) ]]; then
+    # Debian or Ubuntu
+    apt-get -y install php-gd php-xml php-mbstring php-zip php-bcmath php-json php-curl php-opcache
+fi
+
+# Optimize PHP configuration
+echo "Optimizing PHP configuration..."
+cat << EOF > /etc/php.d/custom.ini
+memory_limit = $(($ram_mb/8))M
+max_execution_time = 60
+max_input_time = 60
+post_max_size = 64M
+upload_max_filesize = 64M
+date.timezone = UTC
+EOF
+
 # Optimize MariaDB configuration
 cat << 'EOF' > /etc/my.cnf.d/optimizations.cnf
 [mysqld]
