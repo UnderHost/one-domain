@@ -34,7 +34,6 @@ if [ "$backup" = true ]; then
     echo "Configurations have been backed up to $backup_dir"
 fi
 
-
 # Check the operating system and install required packages
 if [[ $(command -v yum) ]]; then
     # CentOS
@@ -139,8 +138,6 @@ fi
 
 certbot --nginx -d $main_domain --non-interactive --agree-tos --email your@email.com --redirect
 
-
-
 # Install ionCube Loader
 echo "Installing ionCube Loader..."
 php_version=$(php -r "echo PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION;")
@@ -152,7 +149,6 @@ cp $ioncube_dir/ioncube_loader_lin_$php_version.so /usr/lib64/php/modules/
 cat << EOF > /etc/php.d/00-ioncube.ini
 zend_extension = /usr/lib64/php/modules/ioncube_loader_lin_$php_version.so
 EOF
-
 
 # Check server specs and optimize Nginx configuration and PHP settings
 cpu_cores=$(grep -c ^processor /proc/cpuinfo)
@@ -167,8 +163,6 @@ sed -i "s/pm.max_children = .*/pm.max_children = $max_worker_processes/" /etc/ph
 sed -i "s/pm.start_servers = .*/pm.start_servers = $(($max_worker_processes/2))/" /etc/php-fpm.d/www.conf
 sed -i "s/pm.min_spare_servers = .*/pm.min_spare_servers = $(($max_worker_processes/4))/" /etc/php-fpm.d/www.conf
 sed -i "s/pm.max_spare_servers = .*/pm.max_spare_servers = $(($max_worker_processes/2))/" /etc/php-fpm.d/www.conf
-
-
 
 # Optimize PHP configuration
 echo "Optimizing PHP configuration..."
@@ -206,7 +200,6 @@ read -s mysql_user_password
 mysql -u root -p$mysql_root_password -e "CREATE USER '$mysql_user'@'localhost' IDENTIFIED BY '$mysql_user_password'"
 mysql -u root -p$mysql_root_password -e "GRANT ALL PRIVILEGES ON $db_name.* TO '$mysql_user'@'localhost'"
 
-
 # Create FTP user and directory for main domain
 echo "Enter FTP username for $main_domain:"
 read ftp_user
@@ -216,7 +209,6 @@ mkdir -p /var/www/$main_domain/html
 chown -R $ftp_user:$ftp_user /var/www/$main_domain/html
 echo -e "$ftp_user\n$ftp_password" >> /etc/vsftpd/virtual_users.txt
 db_load -T -t hash -f /etc/vsftpd/virtual_users.txt /etc/vsftpd/virtual_users.db
-
 
 # Create PHP info file
 echo "<?php phpinfo(); ?>" > /var/www/$main_domain/html/info.php
