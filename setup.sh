@@ -102,4 +102,17 @@ db_load -T -t hash -f /etc/vsftpd/virtual_users.txt /etc/vsftpd/virtual_users.db
 public_html=$(grep "^$main_domain:" /etc/userdomains | awk '{print "/home/"$2"/public_html"}')
 
 # Create text file with login information
-echo -e "Domain: $main_domain\nPublic HTML Directory: /var/www/$main_domain/html\nMySQL User: $mysql_user\nMySQL Password: $mysql_user_password\nFTP User: $ftp_user\nFTP Password: $ftp_password" >
+echo -e "Domain: $main_domain\nPublic HTML Directory: /var/www/$main_domain/html\nMySQL User: $mysql_user\nMySQL Password: $mysql_user_password\nFTP User: $ftp_user\nFTP Password: $ftp_password" > /root/login_info.txt
+
+echo "LEMP setup and domain configuration completed successfully. Login information saved to /root/login_info.txt."
+
+# Optimize MySQL settings
+mysql_tuning_primer="https://raw.githubusercontent.com/major/MySQLTuner-perl/master/mysqltuner.pl"
+wget $mysql_tuning_primer -O /usr/bin/mysqltuner
+chmod +x /usr/bin/mysqltuner
+echo "Enter MySQL root password:"
+read -s mysql_root_password
+echo "Optimizing MySQL settings..."
+mysqltuner --optimize --datadir=/var/lib/mysql --user=mysql --pass=$mysql_root_password
+
+echo "LEMP setup and MySQL optimization completed successfully. Login information saved to /root/login_info.txt."
