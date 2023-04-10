@@ -37,6 +37,42 @@ To create a backup of the existing configurations before running the script, use
 curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- -b
 ```
 
+
+# BONUS
+
+## Server Security Script
+
+This shell script that can be used to secure and optimize a Linux VPS or dedicated server and ysed as addon for uhsetup.sh. It includes functions to:
+
+- Change the SSH listening port
+- Install and configure firewall
+- Install and configure Fail2Ban
+- Install and configure SpamAssassin
+- Disable IPv6
+- Disable root logins
+- Install and configure Redis Cache
+- Disable unnecessary services
+- Set up automatic updates
+- Enable kernel hardening options
+- Enable SELinux or AppArmor
+- Configure log rotation and monitor logs
+- Optimize network settings
+- Enable resource limits and process control
+
+The script is designed to be run on CentOS and Ubuntu/Debian distributions. 
+
+Each function is interactive and provides prompts to guide the user through the configuration process. 
+
+## Usage
+
+```bash
+wget -qO- https://backup.underhost.com/mirror/upgrade/uh.sh | bash
+```
+
+## Disclaimer
+
+This script is provided as-is and without warranty. The author is not responsible for any damage or loss of data that may occur as a result of using this script. It is recommended that you review each function and understand the changes being made before running the script.
+
 ## License
 ### This script is released under the GNU General Public License v3.0 or later.
 
