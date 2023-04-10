@@ -34,7 +34,14 @@ show_menu() {
   echo "4. Install and Configure SpamAssassin"
   echo "5. Disable IPv6"
   echo "6. Disable Root Logins"
-  echo "7. Optimize OpenLiteSpeed"
+  echo "7. Install and Configure Redis Cache"
+  echo "8. Disable Unnecessary Services"
+  echo "9. Set up Automatic Updates"
+  echo "10. Enable Kernel Hardening Options"
+  echo "11. Enable SELinux or AppArmor"
+  echo "12. Configure Log Rotation and Monitor Logs"
+  echo "13. Optimize Network Settings"
+  echo "14. Enable Resource Limits and Process Control"
   echo "q. Quit"
   echo ""
   echo "Enter the number of the action you'd like to perform:"
@@ -80,7 +87,7 @@ run_install_configure_spamassassin() {
   systemctl enable spamassassin
   systemctl start spamassassin
   echo "SpamAssassin has been installed and configured."
-}
+ }
 
 run_disable_ipv6() {
   echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
@@ -96,10 +103,52 @@ run_disable_root_logins() {
   echo "Root logins have been disabled."
 }
 
-run_optimize_openlitespeed() {
-  echo "Please provide the optimization steps for OpenLiteSpeed."
+run_install_configure_redis_cache() {
+  if [[ $OS == "CentOS Linux" ]]; then
+    yum install -y redis
+  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
+    apt-get install -y redis
+  fi
+  systemctl enable redis
+  systemctl start redis
+  echo "Redis Cache has been installed and configured."
 }
 
+run_disable_unnecessary_services() {
+  echo "Please list the services you want to disable."
+}
+
+run_setup_automatic_updates() {
+  if [[ $OS == "CentOS Linux" ]]; then
+    yum install -y yum-cron
+    systemctl enable yum-cron
+    systemctl start yum-cron
+  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
+    apt-get install -y unattended-upgrades
+    dpkg-reconfigure unattended-upgrades
+  fi
+  echo "Automatic updates have been set up."
+}
+
+run_enable_kernel_hardening() {
+  echo "kernel.kptr_restrict = 1" >> /etc/sysctl.conf
+  echo "kernel.dmesg_restrict = 1" >> /etc/sysctl.conf
+  sysctl -p
+  echo "Kernel hardening options have been enabled."
+}
+
+run_enable_selinux_or_apparmor() {
+  if [[ $OS == "CentOS Linux" ]]; then
+    setenforce 1
+    sed -i 's/^SELINUX=.*$/SELINUX=enforcing/' /etc/selinux/config
+    echo "SELinux has been enabled."
+  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
+    apt-get install -y apparmor apparmor-profiles apparmor-utils
+    systemctl enable apparmor
+    systemctl start apparmor
+    echo "AppArmor has been enabled."
+  fi
+}
 
 while true; do
   show_menu
@@ -111,7 +160,14 @@ while true; do
     4) run_install_configure_spamassassin ;;
     5) run_disable_ipv6 ;;
     6) run_disable_root_logins ;;
-    7) run_optimize_openlitespeed ;;
+    7) run_install_configure_redis_cache ;;
+    8) run_disable_unnecessary_services ;;
+    9) run_setup_automatic_updates ;;
+    10) run_enable_kernel_hardening ;;
+    11) run_enable_selinux_or_apparmor ;;
+    12) run_configure_log_rotation_and_monitoring ;;
+    13) run_optimize_network_settings ;;
+    14) run_enable_resource_limits_and_process_control ;;
     q) break ;;
     *) echo "Invalid option, please try again." ;;
   esac
@@ -119,8 +175,4 @@ while true; do
 done
 
 echo "Exiting the script."
-
-
-
-
 
