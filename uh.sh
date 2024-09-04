@@ -18,8 +18,8 @@ else
 fi
 
 # Update system
-if [ "$OS" == "CentOS Linux" ]; then
-    yum update -y
+if [ "$OS" == "AlmaLinux" ] || [ "$OS" == "CentOS Linux" ]; then
+    dnf update -y
 elif [ "$OS" == "Ubuntu" ] || [ "$OS" == "Debian GNU/Linux" ]; then
     apt-get update && apt-get upgrade -y
 fi
@@ -55,8 +55,8 @@ run_change_ssh_port() {
 }
 
 run_install_configure_firewall() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    yum install -y firewalld
+  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
+    dnf install -y firewalld
     systemctl enable firewalld
     systemctl start firewalld
   elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
@@ -67,9 +67,8 @@ run_install_configure_firewall() {
 }
 
 run_install_configure_fail2ban() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    yum install -y epel-release
-    yum install -y fail2ban
+  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
+    dnf install -y fail2ban
   elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
     apt-get install -y fail2ban
   fi
@@ -79,15 +78,15 @@ run_install_configure_fail2ban() {
 }
 
 run_install_configure_spamassassin() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    yum install -y spamassassin
+  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
+    dnf install -y spamassassin
   elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
     apt-get install -y spamassassin
   fi
   systemctl enable spamassassin
   systemctl start spamassassin
   echo "SpamAssassin has been installed and configured."
- }
+}
 
 run_disable_ipv6() {
   echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
@@ -104,8 +103,8 @@ run_disable_root_logins() {
 }
 
 run_install_configure_redis_cache() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    yum install -y redis
+  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
+    dnf install -y redis
   elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
     apt-get install -y redis
   fi
@@ -115,41 +114,18 @@ run_install_configure_redis_cache() {
 }
 
 run_disable_unnecessary_services() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    systemctl disable postfix
-    systemctl disable chronyd
-    systemctl disable rpcbind.socket
-    systemctl disable rpcbind.target
-    systemctl disable nfs-client.target
-    systemctl disable rpc-statd-notify.service
-    systemctl disable rpc-statd.service
-    systemctl disable kdump.service
-    systemctl disable cups.service
-    systemctl disable cups-browsed.service
-    systemctl disable avahi-daemon.socket
-    systemctl disable avahi-daemon.service
-    echo "The most common unnecessary services have been disabled."
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    systemctl disable ntp
-    systemctl disable cups
-    systemctl disable cups-browsed
-    systemctl disable avahi-daemon.socket
-    systemctl disable avahi-daemon.service
-    systemctl disable remote-fs.target
-    systemctl disable nfs-client.target
-    systemctl disable rpcbind.service
-    systemctl disable rpcbind.socket
-    systemctl disable exim4
-    systemctl disable cron
-    echo "The most common unnecessary services have been disabled."
-  fi
+  # Note: List may need to be customized per OS
+  services_to_disable=('postfix' 'chronyd' 'rpcbind.socket' 'rpcbind.target' 'nfs-client.target' 'rpc-statd-notify.service' 'rpc-statd.service' 'kdump.service' 'cups.service' 'cups-browsed.service' 'avahi-daemon.socket' 'avahi-daemon.service')
+  for service in "${services_to_disable[@]}"; do
+    systemctl disable $service
+  done
+  echo "The most common unnecessary services have been disabled."
 }
 
 run_setup_automatic_updates() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    yum install -y yum-cron
-    systemctl enable yum-cron
-    systemctl start yum-cron
+  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
+    dnf install -y dnf-automatic
+    systemctl enable --now dnf-automatic.timer
   elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
     apt-get install -y unattended-upgrades
     dpkg-reconfigure unattended-upgrades
@@ -165,7 +141,7 @@ run_enable_kernel_hardening() {
 }
 
 run_enable_selinux_or_apparmor() {
-  if [[ $OS == "CentOS Linux" ]]; then
+  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
     setenforce 1
     sed -i 's/^SELINUX=.*$/SELINUX=enforcing/' /etc/selinux/config
     echo "SELinux has been enabled."
@@ -178,27 +154,16 @@ run_enable_selinux_or_apparmor() {
 }
 
 run_enable_resource_limits_and_process_control() {
-  if [[ $OS == "CentOS Linux" ]]; then
-    echo "* hard core 0" >> /etc/security/limits.conf
-    echo "root hard nofile 65535" >> /etc/security/limits.conf
-    echo "* hard nofile 65535" >> /etc/security/limits.conf
-    echo "root soft stack unlimited" >> /etc/security/limits.conf
-    echo "* soft stack unlimited" >> /etc/security/limits.conf
-    echo "session required pam_limits.so" >> /etc/pam.d/common-session
-    echo "fs.file-max = 2097152" >> /etc/sysctl.conf
-    sysctl -p
-    echo "Resource limits and process control have been enabled."
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    echo "* hard core 0" >> /etc/security/limits.conf
-    echo "root hard nofile 65535" >> /etc/security/limits.conf
-    echo "* hard nofile 65535" >> /etc/security/limits.conf
-    echo "root soft stack unlimited" >> /etc/security/limits.conf
-    echo "* soft stack unlimited" >> /etc/security/limits.conf
-    echo "session required pam_limits.so" >> /etc/pam.d/common-session
-    echo "fs.file-max = 2097152" >> /etc/sysctl.conf
-    sysctl -p
-    echo "Resource limits and process control have been enabled."
-  fi
+  # This function applies across all supported Linux distributions
+  echo "* hard core 0" >> /etc/security/limits.conf
+  echo "root hard nofile 65535" >> /etc/security/limits.conf
+  echo "* hard nofile 65535" >> /etc/security/limits.conf
+  echo "root soft stack unlimited" >> /etc/security/limits.conf
+  echo "* soft stack unlimited" >> /etc/security/limits.conf
+  echo "session required pam_limits.so" >> /etc/pam.d/common-session
+  echo "fs.file-max = 2097152" >> /etc/sysctl.conf
+  sysctl -p
+  echo "Resource limits and process control have been enabled."
 }
 
 while true; do
@@ -226,4 +191,3 @@ while true; do
 done
 
 echo "Exiting the script."
-
