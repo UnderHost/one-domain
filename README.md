@@ -1,6 +1,6 @@
 # UnderHost One-Domain Setup Script
 
-This script automates the process of setting up a single domain on a VPS or dedicated server running CentOS, Debian, or Ubuntu. It installs and configures the necessary software, creates a domain, and sets up a database and FTP user for the domain.
+This script automates the process of setting up a single domain on a VPS or dedicated server running CentOS, Debian, Ubuntu, or AlmaLinux. It installs and configures the necessary software, creates a domain, and sets up a database and FTP user for the domain.
 
 ## 👉 [UnderHost.com](https://underhost.com) - Affordable and Powerful VPS, Cloud, and Dedicated Servers
 
@@ -27,13 +27,13 @@ The script performs the following tasks:
 
 To run the script on your server, execute the following command:
 
-```bash
+```
 curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash
 ```
 
 To create a backup of the existing configurations before running the script, use the -b flag:
 
-```bash
+```
 curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- -b
 ```
 
@@ -42,7 +42,7 @@ curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- 
 
 ## Server Security Script
 
-This shell script that can be used to secure and optimize a Linux VPS or dedicated server and ysed as addon for uhsetup.sh. It includes functions to:
+This shell script can be used to secure and optimize a Linux VPS or dedicated server and is designed as an addon for uhsetup.sh. It includes functions to:
 
 - Change the SSH listening port
 - Install and configure firewall
@@ -59,13 +59,13 @@ This shell script that can be used to secure and optimize a Linux VPS or dedicat
 - Optimize network settings
 - Enable resource limits and process control
 
-The script is designed to be run on CentOS and Ubuntu/Debian distributions. 
+The script is designed to be run on CentOS, Debian, Ubuntu, and now AlmaLinux distributions. 
 
 Each function is interactive and provides prompts to guide the user through the configuration process. 
 
 ## Usage
 
-```bash
+```
 wget -qO- https://backup.underhost.com/mirror/upgrade/uh.sh | bash
 ```
 
@@ -75,5 +75,6 @@ This script is provided as-is and without warranty. The author is not responsibl
 
 ## License
 ### This script is released under the GNU General Public License v3.0 or later.
+
 
 
