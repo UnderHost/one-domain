@@ -21,9 +21,6 @@
 # *                                                                           *
 # *****************************************************************************
 
-
-#!/bin/bash
-
 # UnderHost.com Server Setup Script
 # To run: curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- -d example.com -m mysql_root_pass -db database_name -du database_user -dp database_pass -fu ftp_user -fp ftp_pass
 
