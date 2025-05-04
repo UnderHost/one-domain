@@ -1,6 +1,17 @@
 # UnderHost One-Domain Setup Script
 
-This script automates the process of setting up a single domain on a VPS or dedicated server running CentOS, Debian, Ubuntu, or AlmaLinux. It installs and configures the necessary software, creates a domain, and sets up a database and FTP user for the domain.
+This script automates single-domain web server deployment on AlmaLinux, RHEL, Ubuntu, or Debian (VPS/Cloud/Dedicated). Installs and configures:
+
+- Nginx web server
+- MariaDB database
+- PHP-FPM (with optimizations)
+- vsftpd (secured FTP)
+
+Features:
+- ✔️ Automatic Let's Encrypt SSL setup
+- ✔️ Pre-configured security hardening
+- ✔️ Database & user creation
+- ✔️ Production-ready in minutes
 
 ## 👉 [UnderHost.com](https://underhost.com) - Affordable and Powerful VPS, Cloud, and Dedicated Servers
 
