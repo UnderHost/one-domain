@@ -1,193 +1,160 @@
 #!/bin/bash
 
-OS=$(awk -F= '/^NAME/{print $2}' /etc/os-release | tr -d '"')
+# UnderHost Server Upgrade Script
+# Version: 2.0
+# Description: Comprehensive server security and optimization tool
 
-# Ensure the script is run as root
+# Ensure script is run as root
 if [ "$(id -u)" != "0" ]; then
-   echo "This script must be run as root" 1>&2
+   echo -e "\033[31mError: This script must be run as root\033[0m" >&2
    exit 1
 fi
 
-# Detect OS
+# Detect OS and version
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$NAME
+    OS_VERSION=$VERSION_ID
 else
-    echo "Unable to detect OS"
+    echo -e "\033[31mError: Unable to detect OS\033[0m" >&2
     exit 1
 fi
 
-# Update system
-if [ "$OS" == "AlmaLinux" ] || [ "$OS" == "CentOS Linux" ]; then
-    dnf update -y
-elif [ "$OS" == "Ubuntu" ] || [ "$OS" == "Debian GNU/Linux" ]; then
-    apt-get update && apt-get upgrade -y
-fi
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
+# Logging function
+log() {
+    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a /var/log/underhost-upgrade.log
+}
+
+# Initial system update
+update_system() {
+    log "${BLUE}Starting system update...${NC}"
+    if [[ "$OS" =~ "AlmaLinux" || "$OS" =~ "CentOS" ]]; then
+        dnf update -y && dnf upgrade -y
+    elif [[ "$OS" =~ "Ubuntu" || "$OS" =~ "Debian" ]]; then
+        apt-get update && apt-get upgrade -y && apt-get dist-upgrade -y
+    fi
+    log "${GREEN}System update completed${NC}"
+}
+
+# Main menu
 show_menu() {
-  echo "===================="
-  echo "  Security Menu"
-  echo "===================="
-  echo "1. Change SSH Listening Port"
-  echo "2. Install and Configure Firewall"
-  echo "3. Install and Configure Fail2Ban"
-  echo "4. Install and Configure SpamAssassin"
-  echo "5. Disable IPv6"
-  echo "6. Disable Root Logins"
-  echo "7. Install and Configure Redis Cache"
-  echo "8. Disable Unnecessary Services"
-  echo "9. Set up Automatic Updates"
-  echo "10. Enable Kernel Hardening Options"
-  echo "11. Enable SELinux or AppArmor"
-  echo "12. Configure Log Rotation and Monitor Logs"
-  echo "13. Optimize Network Settings"
-  echo "14. Enable Resource Limits and Process Control"
-  echo "q. Quit"
+  clear
+  echo -e "${YELLOW}===================================${NC}"
+  echo -e "${YELLOW}  UnderHost Server Upgrade Menu  ${NC}"
+  echo -e "${YELLOW}===================================${NC}"
+  echo -e "1. ${BLUE}Change SSH Configuration${NC}"
+  echo -e "2. ${BLUE}Firewall Setup${NC}"
+  echo -e "3. ${BLUE}Intrusion Prevention${NC}"
+  echo -e "4. ${BLUE}Email Security${NC}"
+  echo -e "5. ${BLUE}Network Hardening${NC}"
+  echo -e "6. ${BLUE}System Services Management${NC}"
+  echo -e "7. ${BLUE}Performance Optimization${NC}"
+  echo -e "8. ${BLUE}Security Enhancements${NC}"
+  echo -e "9. ${BLUE}Automatic Maintenance${NC}"
+  echo -e "10. ${BLUE}Run All Recommended Upgrades${NC}"
+  echo -e "q. ${RED}Quit${NC}"
   echo ""
-  echo "Enter the number of the action you'd like to perform:"
+  echo -e "${YELLOW}Enter your choice [1-10,q]:${NC} "
 }
 
-run_change_ssh_port() {
-  read -p "Enter the new SSH port: " new_ssh_port
-  sed -i "s/^#Port 22/Port $new_ssh_port/" /etc/ssh/sshd_config
+# SSH Configuration Submenu
+ssh_menu() {
+  clear
+  echo -e "${YELLOW}========================${NC}"
+  echo -e "${YELLOW}  SSH Configuration  ${NC}"
+  echo -e "${YELLOW}========================${NC}"
+  echo -e "1. Change SSH Port"
+  echo -e "2. Disable Root Login"
+  echo -e "3. Enable Key Authentication Only"
+  echo -e "4. Set Idle Timeout"
+  echo -e "5. Restrict SSH Users"
+  echo -e "b. Back to Main Menu"
+  echo ""
+  echo -e "${YELLOW}Enter your choice:${NC} "
+}
+
+# Function to change SSH port
+change_ssh_port() {
+  current_port=$(grep -E "^Port" /etc/ssh/sshd_config | awk '{print $2}')
+  echo -e "${YELLOW}Current SSH port: ${BLUE}$current_port${NC}"
+  
+  read -p "Enter new SSH port (1024-65535): " new_port
+  if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [ "$new_port" -lt 1024 ] || [ "$new_port" -gt 65535 ]; then
+    echo -e "${RED}Invalid port number${NC}"
+    return 1
+  fi
+  
+  # Check if port is in use
+  if ss -tuln | grep -q ":$new_port "; then
+    echo -e "${RED}Port $new_port is already in use${NC}"
+    return 1
+  fi
+  
+  # Update SSH config
+  sed -i "s/^#*Port .*/Port $new_port/" /etc/ssh/sshd_config
+  
+  # Update firewall
+  if command -v firewall-cmd &> /dev/null; then
+    firewall-cmd --permanent --remove-service=ssh
+    firewall-cmd --permanent --add-port=$new_port/tcp
+    firewall-cmd --reload
+  elif command -v ufw &> /dev/null; then
+    ufw deny 22/tcp
+    ufw allow $new_port/tcp
+    ufw reload
+  fi
+  
   systemctl restart sshd
-  echo "SSH port has been changed to $new_ssh_port. Please update your SSH client settings."
+  echo -e "${GREEN}SSH port changed to $new_port${NC}"
+  echo -e "${YELLOW}IMPORTANT: Test new SSH connection before closing this session!${NC}"
 }
 
-run_install_configure_firewall() {
-  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
-    dnf install -y firewalld
-    systemctl enable firewalld
-    systemctl start firewalld
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    apt-get install -y ufw
-    ufw enable
-  fi
-  echo "Firewall has been installed and configured."
-}
-
-run_install_configure_fail2ban() {
-  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
-    dnf install -y fail2ban
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    apt-get install -y fail2ban
-  fi
-  systemctl enable fail2ban
-  systemctl start fail2ban
-  echo "Fail2Ban has been installed and configured."
-}
-
-run_install_configure_spamassassin() {
-  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
-    dnf install -y spamassassin
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    apt-get install -y spamassassin
-  fi
-  systemctl enable spamassassin
-  systemctl start spamassassin
-  echo "SpamAssassin has been installed and configured."
-}
-
-run_disable_ipv6() {
-  echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
-  echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
-  echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.conf
-  sysctl -p
-  echo "IPv6 has been disabled."
-}
-
-run_disable_root_logins() {
-  sed -i "s/^#PermitRootLogin .*/PermitRootLogin no/" /etc/ssh/sshd_config
-  systemctl restart sshd
-  echo "Root logins have been disabled."
-}
-
-run_install_configure_redis_cache() {
-  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
-    dnf install -y redis
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    apt-get install -y redis
-  fi
-  systemctl enable redis
-  systemctl start redis
-  echo "Redis Cache has been installed and configured."
-}
-
-run_disable_unnecessary_services() {
-  # Note: List may need to be customized per OS
-  services_to_disable=('postfix' 'chronyd' 'rpcbind.socket' 'rpcbind.target' 'nfs-client.target' 'rpc-statd-notify.service' 'rpc-statd.service' 'kdump.service' 'cups.service' 'cups-browsed.service' 'avahi-daemon.socket' 'avahi-daemon.service')
-  for service in "${services_to_disable[@]}"; do
-    systemctl disable $service
-  done
-  echo "The most common unnecessary services have been disabled."
-}
-
-run_setup_automatic_updates() {
-  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
-    dnf install -y dnf-automatic
-    systemctl enable --now dnf-automatic.timer
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    apt-get install -y unattended-upgrades
-    dpkg-reconfigure unattended-upgrades
-  fi
-  echo "Automatic updates have been set up."
-}
-
-run_enable_kernel_hardening() {
-  echo "kernel.kptr_restrict = 1" >> /etc/sysctl.conf
-  echo "kernel.dmesg_restrict = 1" >> /etc/sysctl.conf
-  sysctl -p
-  echo "Kernel hardening options have been enabled."
-}
-
-run_enable_selinux_or_apparmor() {
-  if [[ $OS == "AlmaLinux" || $OS == "CentOS Linux" ]]; then
-    setenforce 1
-    sed -i 's/^SELINUX=.*$/SELINUX=enforcing/' /etc/selinux/config
-    echo "SELinux has been enabled."
-  elif [[ $OS == "Ubuntu" || $OS == "Debian GNU/Linux" ]]; then
-    apt-get install -y apparmor apparmor-profiles apparmor-utils
-    systemctl enable apparmor
-    systemctl start apparmor
-    echo "AppArmor has been enabled."
-  fi
-}
-
-run_enable_resource_limits_and_process_control() {
-  # This function applies across all supported Linux distributions
-  echo "* hard core 0" >> /etc/security/limits.conf
-  echo "root hard nofile 65535" >> /etc/security/limits.conf
-  echo "* hard nofile 65535" >> /etc/security/limits.conf
-  echo "root soft stack unlimited" >> /etc/security/limits.conf
-  echo "* soft stack unlimited" >> /etc/security/limits.conf
-  echo "session required pam_limits.so" >> /etc/pam.d/common-session
-  echo "fs.file-max = 2097152" >> /etc/sysctl.conf
-  sysctl -p
-  echo "Resource limits and process control have been enabled."
-}
+# Main execution
+update_system
 
 while true; do
   show_menu
-  read -r user_choice
-  case "$user_choice" in
-    1) run_change_ssh_port ;;
-    2) run_install_configure_firewall ;;
-    3) run_install_configure_fail2ban ;;
-    4) run_install_configure_spamassassin ;;
-    5) run_disable_ipv6 ;;
-    6) run_disable_root_logins ;;
-    7) run_install_configure_redis_cache ;;
-    8) run_disable_unnecessary_services ;;
-    9) run_setup_automatic_updates ;;
-    10) run_enable_kernel_hardening ;;
-    11) run_enable_selinux_or_apparmor ;;
-    12) run_configure_log_rotation_and_monitoring ;;
-    13) run_optimize_network_settings ;;
-    14) run_enable_resource_limits_and_process_control ;;
-    q) break ;;
-    *) echo "Invalid option, please try again." ;;
+  read -r choice
+  case "$choice" in
+    1) 
+      while true; do
+        ssh_menu
+        read -r ssh_choice
+        case "$ssh_choice" in
+          1) change_ssh_port ;;
+          2) disable_root_login ;;
+          3) enable_key_auth ;;
+          4) set_ssh_timeout ;;
+          5) restrict_ssh_users ;;
+          b) break ;;
+          *) echo -e "${RED}Invalid option${NC}" ;;
+        esac
+        read -n 1 -s -r -p "Press any key to continue..."
+      done
+      ;;
+    2) configure_firewall ;;
+    3) setup_intrusion_prevention ;;
+    4) enhance_email_security ;;
+    5) harden_network ;;
+    6) manage_services ;;
+    7) optimize_performance ;;
+    8) enhance_security ;;
+    9) setup_automatic_maintenance ;;
+    10) run_all_upgrades ;;
+    q|Q) 
+      echo -e "${GREEN}Exiting UnderHost Upgrade Script${NC}"
+      exit 0
+      ;;
+    *) 
+      echo -e "${RED}Invalid option, please try again${NC}"
+      sleep 1
+      ;;
   esac
-  echo ""
 done
-
-echo "Exiting the script."
