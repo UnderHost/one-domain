@@ -28,40 +28,92 @@ The script performs the following tasks:
 To run the script on your server, execute the following command:
 
 ```
-curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash
+curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- \
+  -d yourdomain.com \          # Main domain (required)
+  -b \                         # Create backup (optional)
+  -m mysql_root_password \     # MySQL root password (optional)
+  -db database_name \          # Database name (optional)
+  -du database_user \          # Database user (optional)
+  -dp database_password \      # Database password (optional)
+  -fu ftp_username \           # FTP user (optional)
+  -fp ftp_password             # FTP password (optional)
 ```
 
 To create a backup of the existing configurations before running the script, use the -b flag:
 
 ```
-curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- -b
+curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- -d yourdomain.com -b
 ```
 
+Full custom setup:
 
-# BONUS
+```
+curl -sL https://backup.underhost.com/mirror/setup/uhsetup.sh | sudo bash -s -- \
+  -d yourdomain.com \
+  -m SecureRootPass123 \
+  -db myapp_db \
+  -du myapp_user \
+  -dp DBuserPass123 \
+  -fu myftpuser \
+  -fp FTPuserPass123
+```
 
-## Server Security Script
+### Post-Installation
 
-This shell script can be used to secure and optimize a Linux VPS or dedicated server and is designed as an addon for uhsetup.sh. It includes functions to:
+After installation:
 
-- Change the SSH listening port
-- Install and configure firewall
-- Install and configure Fail2Ban
-- Install and configure SpamAssassin
-- Disable IPv6
-- Disable root logins
-- Install and configure Redis Cache
-- Disable unnecessary services
-- Set up automatic updates
-- Enable kernel hardening options
-- Enable SELinux or AppArmor
-- Configure log rotation and monitor logs
-- Optimize network settings
-- Enable resource limits and process control
+1. Upload your website files to `/var/www/yourdomain.com`
+2. Consider removing the PHP info file:
 
-The script is designed to be run on CentOS, Debian, Ubuntu, and now AlmaLinux distributions. 
+   ```
+   rm /var/www/yourdomain.com/info.php
+   ```
 
-Each function is interactive and provides prompts to guide the user through the configuration process. 
+## Notes
+
+- All passwords are stored in `/root/login_info.txt`
+- If passwords aren't specified, random secure passwords will be generated
+- The script supports:
+  - AlmaLinux/RHEL/CentOS
+  - Debian/Ubuntu
+
+# BONUS: Server Security & Optimization Script
+
+## Overview
+This advanced security script complements `uhsetup.sh` by adding enterprise-grade hardening to your Linux server. It provides:
+
+**Security Enhancements**  
+**Intrusion Prevention**  
+**Performance Optimizations**  
+**Automated Maintenance**
+
+## Key Features
+
+### Security Hardening
+- SSH Security (Port change, root login disable)
+- Firewall configuration (UFW/Firewalld)
+- Fail2Ban installation
+- SELinux/AppArmor enforcement
+- Kernel hardening
+
+### Performance Tuning
+- Redis cache setup
+- Network optimization
+- Resource limits configuration
+- Unnecessary service removal
+
+### Maintenance
+- Automatic updates
+- Log rotation
+- System monitoring
+
+## Supported Distributions
+| Distribution | Version Support |
+|--------------|-----------------|
+| AlmaLinux    | 8.x, 9.x        |
+| CentOS       | 7.x, 8.x        |
+| Debian       | 10+, 11         |
+| Ubuntu       | 20.04 LTS+      |
 
 ## Usage
 
@@ -69,12 +121,60 @@ Each function is interactive and provides prompts to guide the user through the 
 wget -qO- https://backup.underhost.com/mirror/upgrade/uh.sh | bash
 ```
 
-## Disclaimer
+## Advanced Options
 
-This script is provided as-is and without warranty. The author is not responsible for any damage or loss of data that may occur as a result of using this script. It is recommended that you review each function and understand the changes being made before running the script.
+# Download first for inspection/review:
 
-## License
-### This script is released under the GNU General Public License v3.0 or later.
+```
+wget https://backup.underhost.com/mirror/upgrade/uh.sh
+chmod +x uh.sh
 
+# Interactive mode (recommended):
+./uh.sh
 
+# Non-interactive mode (for automation):
+./uh.sh --auto
+```
 
+### Important Notes
+- ⚠️ Always test SSH connections before closing your current session when changing ports
+- ⚠️ Some optimizations may require reboot to take full effect
+- ⚠️ Review /root/underhost-report.txt after completion
+
+### Usage Agreement
+By executing this script, you acknowledge and agree that:
+
+- **No Warranty**  
+   This software is provided "AS IS" without any warranties, expressed or implied, including but not limited to merchantability or fitness for a particular purpose.
+
+## 🛡️ Professional Support Recommended
+
+For mission-critical systems, we strongly recommend:  
+
+**UnderHost Server Management Services**  
+✅ **Expert Implementation** - Certified Linux engineers  
+✅ **24/7 Monitoring** - Proactive issue prevention  
+✅ **Backup Solutions** - Automated & encrypted backups  
+✅ **Security Hardening** - Enterprise-grade protection  
+
+👉 **Let the experts handle it**:  
+[Get Managed Server Support](https://underhost.com/server-management.php)
+
+*"Focus on your business while we handle your infrastructure"*  
+- UnderHost Support Team
+
+###  License (GPLv3+)
+```
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for full details.
+
+You should have received a copy of the license with this software.
+If not, see <https://www.gnu.org/licenses/>.
+```
