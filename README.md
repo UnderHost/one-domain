@@ -1,6 +1,6 @@
 # UnderHost One-Domain Installer
 
-**A production-grade, single-domain deployment tool for PHP and WordPress — built for 2026.**
+**A production-grade, single-domain deployment tool for PHP and WordPress.**
 
 [![License: GPLv2](https://img.shields.io/badge/License-GPLv2-blue.svg)](LICENSE)
 [![UnderHost](https://img.shields.io/badge/by-UnderHost.com-orange)](https://underhost.com)
