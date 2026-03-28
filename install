@@ -1,96 +1,52 @@
 #!/usr/bin/env bash
 # =============================================================================
 #  UnderHost One-Domain Installer  |  https://underhost.com
-#  Version: 2026.3.0
+#  Version: 2026.4.0
 #  License: GPL-3.0
-# =============================================================================
-#
-#  DEPLOY:
-#    install <domain> php              Deploy a plain PHP stack
-#    install <domain> wp               Deploy a WordPress stack
-#    install <domain> wp --with-staging  Include staging environment
-#    install --interactive             Full guided installation wizard
-#
-#  MAINTENANCE:
-#    install status    <domain>        Quick health check
-#    install diagnose  <domain>        Advanced diagnostic report
-#    install repair    <domain>        Interactive repair wizard
-#    install logs      <domain>        Tail Nginx access log
-#    install ssl-renew-test <domain>   Dry-run certbot renewal test
-#
-#  WORDPRESS:
-#    install wp-reset-perms <domain>   Fix WordPress file permissions
-#    install wp-clone <src> <dst>      Clone a WordPress install
-#    install export-report <domain>    Generate customer summary report
-#    install staging-push  <domain>    Push staging to production
-#    install staging-pull  <domain>    Refresh staging from production
-#
-#  SECURITY & PERFORMANCE:
-#    install harden   [domain]         Apply security hardening
-#    install optimize [domain]         Apply performance tuning
-#
-#  MANAGEMENT:
-#    install uninstall <domain>        Remove a domain deployment
-#    install backup    <domain>        Back up configs and credentials
-#    install update                    Update installer from GitHub
-#    install --help                    Show this help
-#
 # =============================================================================
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# ---------------------------------------------------------------------------
-# Resolve script directory (works when piped, sourced, or symlinked)
-# ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ---------------------------------------------------------------------------
-# Load core library first (colors, logging, prompts, validators)
-# ---------------------------------------------------------------------------
 _core="${SCRIPT_DIR}/lib/core.sh"
 if [[ ! -f "$_core" ]]; then
     echo "[FATAL] Core library not found: ${_core}" >&2
-    echo "        Repository may be incomplete. Re-clone and try again." >&2
     exit 1
 fi
-# shellcheck source=lib/core.sh
 source "$_core"
 unset _core
 
-# ---------------------------------------------------------------------------
-# Load all modules — fatal if a required module is missing
-# ---------------------------------------------------------------------------
-_REQUIRED_MODULES=(os prompts packages firewall nginx php database redis ssl ftp
-    wordpress staging hardening optimize summary uninstall status diagnose repair
-    selfupdate)
-_OPTIONAL_MODULES=(wpcli)   # in lib/ since 2026.3
+[[ -f /etc/underhost/defaults.conf ]] && source /etc/underhost/defaults.conf
+[[ -f "${HOME}/.one-domain.conf"   ]] && source "${HOME}/.one-domain.conf"
+
+_REQUIRED_MODULES=(
+    os prompts packages firewall nginx php database redis ssl ftp
+    wordpress staging hardening optimize summary uninstall
+    status diagnose repair selfupdate
+    backup info list audit checkdeps
+)
 
 for _mod in "${_REQUIRED_MODULES[@]}"; do
     _mod_file="${SCRIPT_DIR}/modules/${_mod}.sh"
     if [[ -f "$_mod_file" ]]; then
-        # shellcheck disable=SC1090
         source "$_mod_file"
     else
         echo "[FATAL] Required module not found: ${_mod_file}" >&2
-        echo "        Repository may be incomplete. Re-clone and try again." >&2
         exit 1
     fi
 done
 unset _mod _mod_file _REQUIRED_MODULES
 
-# Load wpcli helper from lib/ (optional, graceful fallback)
 _wpcli_lib="${SCRIPT_DIR}/lib/wpcli.sh"
-if [[ -f "$_wpcli_lib" ]]; then
-    # shellcheck source=lib/wpcli.sh
-    source "$_wpcli_lib"
-fi
-unset _wpcli_lib _OPTIONAL_MODULES
+[[ -f "$_wpcli_lib" ]] && source "$_wpcli_lib"
+unset _wpcli_lib
 
 # ---------------------------------------------------------------------------
-# Global defaults — all variables used by modules must be initialised here
+# Global defaults
 # ---------------------------------------------------------------------------
-UNDERHOST_VERSION="2026.3.0"
+UNDERHOST_VERSION="2026.4.0"
 INSTALL_MODE=""
 DOMAIN=""
 PHP_VERSION="8.3"
@@ -102,6 +58,7 @@ ENABLE_DB=true
 ENABLE_REDIS=false
 ENABLE_FIREWALL=true
 ENABLE_FAIL2BAN=true
+ENABLE_AUTO_UPDATES=true
 DB_NAME=""
 DB_USER=""
 DB_PASS=""
@@ -137,140 +94,69 @@ SKIP_PROMPT=false
 INTERACTIVE=false
 BACKUP=false
 LOG_FILE="/var/log/underhost_install.log"
-
-# Supported PHP versions — validated in _validate_php_version()
+BACKUP_ROOT="${BACKUP_ROOT:-/var/backups/underhost}"
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+BACKUP_REMOTE_DEST="${BACKUP_REMOTE_DEST:-}"
+BACKUP_SCHEDULE="${BACKUP_SCHEDULE:-daily}"
 SUPPORTED_PHP_VERSIONS=(8.1 8.2 8.3 8.4)
 
 # ---------------------------------------------------------------------------
-# Command dispatch — checks first positional arg for maintenance commands
-# ---------------------------------------------------------------------------
 _dispatch_command() {
     local cmd="${1:-}"
-    cmd="${cmd#--}"   # strip leading --
-
+    cmd="${cmd#--}"
     case "$cmd" in
-        status)
-            _ensure_root; _init_log
-            os_detect 2>/dev/null || true
-            status_domain "${2:-}"
-            exit 0
-            ;;
-        diagnose)
-            _ensure_root; _init_log
-            os_detect 2>/dev/null || true
-            diagnose_domain "${2:-}"
-            exit 0
-            ;;
-        repair)
-            _ensure_root; _init_log
-            repair_domain "${2:-}"
-            exit 0
-            ;;
+        status)          _ensure_root; _init_log; os_detect 2>/dev/null||true; status_domain "${2:-}"; exit 0 ;;
+        diagnose)        _ensure_root; _init_log; os_detect 2>/dev/null||true; diagnose_domain "${2:-}"; exit 0 ;;
+        repair)          _ensure_root; _init_log; repair_domain "${2:-}"; exit 0 ;;
         logs)
             local log_domain="${2:-}"
             [[ -z "$log_domain" ]] && die "Usage: install logs domain.com"
             local log_file="/var/log/nginx/${log_domain}.access.log"
             [[ -f "$log_file" ]] || log_file="/var/log/nginx/access.log"
-            [[ -f "$log_file" ]] || die "Log file not found for domain: ${log_domain}"
+            [[ -f "$log_file" ]] || die "Log file not found for: ${log_domain}"
             exec tail -f "$log_file"
             ;;
         ssl-renew-test|ssl_renew_test)
+            _ensure_root; _init_log; os_detect 2>/dev/null||true
+            DOMAIN="${2:-}"; [[ -z "$DOMAIN" ]] && die "Usage: install ssl-renew-test domain.com"
+            ssl_renew_test "$DOMAIN"; exit 0 ;;
+        info)            _init_log 2>/dev/null||true; info_show; exit 0 ;;
+        list)            _ensure_root; _init_log; os_detect 2>/dev/null||true; list_domains; exit 0 ;;
+        check-deps|checkdeps)  _init_log 2>/dev/null||true; os_detect 2>/dev/null||true; checkdeps_run; exit 0 ;;
+        audit)           _ensure_root; _init_log; os_detect 2>/dev/null||true; audit_run "${2:-}"; exit 0 ;;
+        apply)
             _ensure_root; _init_log
-            os_detect 2>/dev/null || true
-            DOMAIN="${2:-}"
-            [[ -z "$DOMAIN" ]] && die "Usage: install ssl-renew-test domain.com"
-            ssl_renew_test "$DOMAIN"
-            exit 0
-            ;;
-        backup|backup-configs)
-            _ensure_root; _init_log
-            DOMAIN="${2:-}"
-            _backup_configs
-            exit 0
-            ;;
-        uninstall)
-            _ensure_root; _init_log
-            uninstall_domain "${2:-}"
-            exit 0
-            ;;
-        update|self-update|selfupdate)
-            _ensure_root; _init_log
-            selfupdate_run
-            exit 0
-            ;;
-        wp-reset-perms|wp_reset_perms)
-            _ensure_root; _init_log
-            os_detect 2>/dev/null || true
-            wp_reset_perms "${2:-}"
-            exit 0
-            ;;
-        wp-clone|wp_clone)
-            _ensure_root; _init_log
-            os_detect 2>/dev/null || true
-            wp_clone "${2:-}" "${3:-}"
-            exit 0
-            ;;
-        export-report|export_report)
-            _ensure_root; _init_log
-            os_detect 2>/dev/null || true
-            wp_export_report "${2:-}"
-            exit 0
-            ;;
-        staging-push|staging_push)
-            _ensure_root; _init_log
-            DOMAIN="${2:-}"
-            [[ -z "$DOMAIN" ]] && die "Usage: install staging-push domain.com"
-            os_detect 2>/dev/null || true
-            staging_push "$DOMAIN"
-            exit 0
-            ;;
-        staging-pull|staging_pull)
-            _ensure_root; _init_log
-            DOMAIN="${2:-}"
-            [[ -z "$DOMAIN" ]] && die "Usage: install staging-pull domain.com"
-            os_detect 2>/dev/null || true
-            staging_pull "$DOMAIN"
-            exit 0
-            ;;
+            DOMAIN="${2:-}"; [[ -z "$DOMAIN" ]] && die "Usage: install apply domain.com"
+            _validate_domain "$DOMAIN"; os_detect; os_validate_support; _resolve_defaults; _apply_domain; exit 0 ;;
+        backup)          _ensure_root; _init_log; backup_domain "${2:-}"; exit 0 ;;
+        backup-auto)     _ensure_root; _init_log; backup_schedule "${2:-}"; exit 0 ;;
+        restore)         _ensure_root; _init_log; backup_restore "${2:-}"; exit 0 ;;
+        backup-list)     _ensure_root; _init_log; backup_list "${2:-}"; exit 0 ;;
+        uninstall)       _ensure_root; _init_log; uninstall_domain "${2:-}"; exit 0 ;;
+        update|self-update|selfupdate)  _ensure_root; _init_log; selfupdate_run; exit 0 ;;
+        wp-reset-perms)  _ensure_root; _init_log; os_detect 2>/dev/null||true; wp_reset_perms "${2:-}"; exit 0 ;;
+        wp-clone)        _ensure_root; _init_log; os_detect 2>/dev/null||true; wp_clone "${2:-}" "${3:-}"; exit 0 ;;
+        wp-update-all)   _ensure_root; _init_log; os_detect 2>/dev/null||true; wp_update_all "${2:-}"; exit 0 ;;
+        export-report)   _ensure_root; _init_log; os_detect 2>/dev/null||true; wp_export_report "${2:-}"; exit 0 ;;
+        staging-push)    _ensure_root; _init_log; DOMAIN="${2:-}"; [[ -z "$DOMAIN" ]] && die "Usage: install staging-push domain.com"; os_detect 2>/dev/null||true; staging_push "$DOMAIN"; exit 0 ;;
+        staging-pull)    _ensure_root; _init_log; DOMAIN="${2:-}"; [[ -z "$DOMAIN" ]] && die "Usage: install staging-pull domain.com"; os_detect 2>/dev/null||true; staging_pull "$DOMAIN"; exit 0 ;;
         harden|harden-only)
-            _ensure_root; _init_log
-            os_detect; os_validate_support
-            if [[ -n "${2:-}" ]]; then
-                DOMAIN="${2}"
-                harden_apply_domain "$DOMAIN"
-            fi
-            harden_apply_system
-            exit 0
-            ;;
-        optimize|optimize-only)
-            _ensure_root; _init_log
-            os_detect
-            optimize_only "${2:-}"
-            exit 0
-            ;;
-        version|--version|-V)
-            echo "UnderHost One-Domain Installer v${UNDERHOST_VERSION}"
-            exit 0
-            ;;
-        help|--help|-h)
-            _show_help
-            exit 0
-            ;;
-        *)
-            return 1
-            ;;
+            _ensure_root; _init_log; os_detect; os_validate_support
+            [[ -n "${2:-}" ]] && { DOMAIN="${2}"; harden_apply_domain "$DOMAIN"; }
+            harden_apply_system; exit 0 ;;
+        optimize)        _ensure_root; _init_log; os_detect; optimize_only "${2:-}"; exit 0 ;;
+        version|--version|-V) echo "UnderHost One-Domain Installer v${UNDERHOST_VERSION}"; exit 0 ;;
+        help|--help|-h)  _show_help; exit 0 ;;
+        *)               return 1 ;;
     esac
 }
 
-# ---------------------------------------------------------------------------
-# Parse positional + flag arguments
 # ---------------------------------------------------------------------------
 _parse_args() {
     if [[ $# -ge 1 ]]; then
         _dispatch_command "$@" && return || true
     fi
 
-    # Positional: install domain.com php|wp [flags...]
     if [[ $# -ge 2 && "$1" != --* && "$1" != -* ]]; then
         DOMAIN="$1"
         case "${2,,}" in
@@ -284,95 +170,41 @@ _parse_args() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --interactive)      INTERACTIVE=true ;;
-            --basic)            BASIC_MODE=true  ;;
-            --advanced)         BASIC_MODE=false ;;
-            --dry-run)          DRY_RUN=true     ;;
-            --force)            SKIP_PROMPT=true ;;
-            --backup)           BACKUP=true      ;;
-            --php-version)
-                PHP_VERSION="${2:?'--php-version requires a value (e.g. 8.3)'}"
-                _validate_php_version "$PHP_VERSION"
-                shift
-                ;;
-            --ssl-email)
-                SSL_EMAIL="${2:?'--ssl-email requires a value'}"
-                _validate_email "$SSL_EMAIL" "--ssl-email"
-                shift
-                ;;
-            --admin-email)
-                ADMIN_EMAIL="${2:?'--admin-email requires a value'}"
-                _validate_email "$ADMIN_EMAIL" "--admin-email"
-                shift
-                ;;
-            --domain)
-                DOMAIN="${2:?'--domain requires a value'}"
-                shift
-                ;;
-            --mode)
-                INSTALL_MODE="${2:?'--mode requires a value'}"
-                shift
-                ;;
-            --site-root)    SITE_ROOT="${2:-}"; shift ;;
-            --log-file)     LOG_FILE="${2:-}"; shift ;;
-            --wp-title)     WP_TITLE="${2:-}"; shift ;;
-            --wp-admin-user)    WP_ADMIN_USER="${2:-}"; shift ;;
-            --wp-admin-email)   WP_ADMIN_EMAIL="${2:-}"; shift ;;
-            --with-redis)       ENABLE_REDIS=true; WP_REDIS=true ;;
-            --with-db)          ENABLE_DB=true      ;;
-            --no-db)            ENABLE_DB=false     ;;
-            --with-staging)     WP_STAGING=true     ;;
-            --with-ftp)         FTP_MODE="ftp-tls"  ;;
-            --with-sftp-only)   FTP_MODE="sftp"     ;;
-            --with-phpmyadmin)  ENABLE_PHPMYADMIN=true ;;
-            --no-firewall)      ENABLE_FIREWALL=false ;;
-            --no-fail2ban)      ENABLE_FAIL2BAN=false ;;
-            --no-swap)          CONFIGURE_SWAP=false  ;;
-            --no-tune)          TUNE_SERVICES=false   ;;
-            # Inline sub-commands via flags
-            --uninstall)
-                _ensure_root; _init_log
-                uninstall_domain "${2:-$DOMAIN}"; exit 0 ;;
-            --status)
-                _ensure_root; _init_log
-                os_detect 2>/dev/null || true
-                status_domain "${2:-$DOMAIN}"; exit 0 ;;
-            --diagnose)
-                _ensure_root; _init_log
-                os_detect 2>/dev/null || true
-                diagnose_domain "${2:-$DOMAIN}"; exit 0 ;;
-            --repair)
-                _ensure_root; _init_log
-                repair_domain "${2:-$DOMAIN}"; exit 0 ;;
-            --self-update|--selfupdate)
-                _ensure_root; _init_log
-                selfupdate_run; exit 0 ;;
-            --harden-only)
-                _ensure_root; _init_log
-                os_detect; harden_apply_system; exit 0 ;;
-            --optimize-only)
-                _ensure_root; _init_log
-                os_detect; optimize_only "${DOMAIN:-}"; exit 0 ;;
-            --wp-reset-perms)
-                _ensure_root; _init_log
-                os_detect 2>/dev/null || true
-                wp_reset_perms "${2:-$DOMAIN}"; exit 0 ;;
-            --export-report)
-                _ensure_root; _init_log
-                os_detect 2>/dev/null || true
-                wp_export_report "${2:-$DOMAIN}"; exit 0 ;;
-            --version|-V)
-                echo "UnderHost One-Domain Installer v${UNDERHOST_VERSION}"
-                exit 0
-                ;;
-            --help|-h)
-                _show_help; exit 0 ;;
-            --)
-                shift; break ;;
-            --*)
-                die "Unknown flag: $1 — run with --help to see available options" ;;
-            *)
-                die "Unexpected argument: $1 — run with --help to see available options" ;;
+            --interactive)     INTERACTIVE=true ;;
+            --basic)           BASIC_MODE=true  ;;
+            --advanced)        BASIC_MODE=false ;;
+            --dry-run)         DRY_RUN=true     ;;
+            --force)           SKIP_PROMPT=true ;;
+            --backup)          BACKUP=true      ;;
+            --php-version)     PHP_VERSION="${2:?'--php-version requires a value'}"; _validate_php_version "$PHP_VERSION"; shift ;;
+            --ssl-email)       SSL_EMAIL="${2:?'--ssl-email requires a value'}"; _validate_email "$SSL_EMAIL" "--ssl-email"; shift ;;
+            --admin-email)     ADMIN_EMAIL="${2:?'--admin-email requires a value'}"; _validate_email "$ADMIN_EMAIL" "--admin-email"; shift ;;
+            --domain)          DOMAIN="${2:?'--domain requires a value'}"; shift ;;
+            --mode)            INSTALL_MODE="${2:?'--mode requires a value'}"; shift ;;
+            --site-root)       SITE_ROOT="${2:-}"; shift ;;
+            --log-file)        LOG_FILE="${2:-}"; shift ;;
+            --wp-title)        WP_TITLE="${2:-}"; shift ;;
+            --wp-admin-user)   WP_ADMIN_USER="${2:-}"; shift ;;
+            --wp-admin-email)  WP_ADMIN_EMAIL="${2:-}"; shift ;;
+            --with-redis)      ENABLE_REDIS=true; WP_REDIS=true ;;
+            --with-db)         ENABLE_DB=true       ;;
+            --no-db)           ENABLE_DB=false      ;;
+            --with-staging)    WP_STAGING=true      ;;
+            --with-ftp)        FTP_MODE="ftp-tls"   ;;
+            --with-sftp-only)  FTP_MODE="sftp"      ;;
+            --with-phpmyadmin) ENABLE_PHPMYADMIN=true ;;
+            --no-firewall)     ENABLE_FIREWALL=false  ;;
+            --no-fail2ban)     ENABLE_FAIL2BAN=false  ;;
+            --no-auto-updates) ENABLE_AUTO_UPDATES=false ;;
+            --no-swap)         CONFIGURE_SWAP=false   ;;
+            --no-tune)         TUNE_SERVICES=false    ;;
+            --backup-dest)     BACKUP_REMOTE_DEST="${2:-}"; shift ;;
+            --backup-retention) BACKUP_RETENTION_DAYS="${2:-14}"; shift ;;
+            --version|-V)      echo "UnderHost One-Domain Installer v${UNDERHOST_VERSION}"; exit 0 ;;
+            --help|-h)         _show_help; exit 0 ;;
+            --)                shift; break ;;
+            --*)               die "Unknown flag: $1 — run with --help to see available options" ;;
+            *)                 die "Unexpected argument: $1 — run with --help to see available options" ;;
         esac
         shift
     done
@@ -396,11 +228,22 @@ $(color BOLD "MAINTENANCE:")
   install repair    <domain>              Interactive repair wizard
   install logs      <domain>              Tail Nginx access log live
   install ssl-renew-test <domain>         Dry-run SSL renewal test
-  install backup    <domain>              Back up configs and credentials
+  install info                            Show server & installer environment
+  install list                            List all managed domains on this server
+  install check-deps                      Pre-flight connectivity & tool check
+  install audit     [domain]              Security baseline audit (read-only)
+  install apply     <domain>              Re-apply stack config (idempotent)
+
+$(color BOLD "BACKUP & RESTORE:")
+  install backup      <domain>            On-demand full backup (files + DB)
+  install backup-auto <domain>            Install automatic scheduled backup
+  install restore     <domain>            Interactive restore from backup
+  install backup-list <domain>            List available backups
 
 $(color BOLD "WORDPRESS TOOLS:")
   install wp-reset-perms <domain>         Fix broken file permissions
   install wp-clone <src.com> <dst.com>    Clone a WordPress install
+  install wp-update-all  <domain>         Update WP core + all plugins + themes
   install export-report  <domain>         Generate customer summary report
   install staging-push   <domain>         Push staging -> production
   install staging-pull   <domain>         Refresh staging from production
@@ -414,66 +257,55 @@ $(color BOLD "MANAGEMENT:")
   install update                          Update installer from GitHub
   install version                         Show installer version
 
-$(color BOLD "FLAGS:")
-  --basic                 Wizard: essential questions only
-  --advanced              Wizard: all questions (default)
-  --dry-run               Show plan, make no changes
-  --force                 Skip confirmation prompts
-  --backup                Back up existing configs before install
-  --php-version VERSION   PHP version: 8.1 / 8.2 / 8.3 / 8.4  (default: 8.3)
-  --ssl-email EMAIL       Email for Let's Encrypt certificate
-  --admin-email EMAIL     Admin/contact email
-  --with-redis            Enable Redis object cache
-  --with-db / --no-db     Create database or skip (database enabled by default)
-  --with-staging          Create WordPress staging environment
-  --with-ftp              Enable FTP with TLS (FTPS via vsftpd)
-  --with-sftp-only        SFTP-only file access (recommended over FTP)
-  --with-phpmyadmin       Install phpMyAdmin (⚠ see security notes)
-  --no-firewall           Skip firewall configuration
-  --no-fail2ban           Skip Fail2Ban setup
-  --no-swap               Skip swap file creation
-  --no-tune               Skip performance tuning
-
-$(color BOLD "EXAMPLES:")
-  install example.com php
-  install example.com wp --with-redis --with-staging
-  install example.com php --php-version 8.4 --no-db --ssl-email ops@example.com
-  install --interactive
-  install status   example.com
-  install repair   example.com
-  install diagnose example.com
-  install harden   example.com
-  install wp-reset-perms example.com
-  install wp-clone example.com new-site.com
-  install update
+$(color BOLD "KEY FLAGS:")
+  --basic / --advanced       Wizard depth
+  --dry-run                  Show plan, make no changes
+  --force                    Skip confirmation prompts
+  --php-version VERSION      8.1 / 8.2 / 8.3 / 8.4  (default: 8.3)
+  --ssl-email EMAIL          Email for Let's Encrypt
+  --with-redis               Enable Redis object cache
+  --with-staging             WordPress staging environment
+  --with-ftp / --with-sftp-only  File access method
+  --no-auto-updates          Skip automatic OS security updates
+  --backup-dest DEST         rsync:user@host:/path or rclone:remote:bucket
+  --backup-retention DAYS    Days to keep backups (default: 14)
 
 $(color BOLD "SUPPORTED OS:")
   Ubuntu 24.04 / 25.xx  |  Debian 12 / 13  |  AlmaLinux 9 / 10
 
-$(color DIM "Full documentation: https://github.com/UnderHost/one-domain")
+$(color BOLD "CONFIG FILE (optional):")
+  /etc/underhost/defaults.conf  or  ~/.one-domain.conf
+  Example: PHP_VERSION=8.4  SSL_EMAIL=ops@example.com  BACKUP_RETENTION_DAYS=30
 
+$(color DIM "Full docs: https://github.com/UnderHost/one-domain")
 EOF
 }
 
 # ---------------------------------------------------------------------------
-# Validate PHP version against supported list
-# ---------------------------------------------------------------------------
 _validate_php_version() {
     local ver="$1"
-    local supported
     for supported in "${SUPPORTED_PHP_VERSIONS[@]}"; do
         [[ "$ver" == "$supported" ]] && return 0
     done
     die "Unsupported PHP version: ${ver}. Supported: ${SUPPORTED_PHP_VERSIONS[*]}"
 }
 
-# ---------------------------------------------------------------------------
-# Entry point
+_apply_domain() {
+    step "Re-applying stack configuration for ${DOMAIN}"
+    warn "This will overwrite Nginx vhost and PHP-FPM pool for ${DOMAIN}."
+    prompt_yn "Proceed?" "y" || die "Apply cancelled."
+    php_configure_pool
+    nginx_configure_vhost
+    hardening_apply
+    [[ "$TUNE_SERVICES" == true ]] && optimize_tune
+    _restart_services
+    ok "Stack configuration re-applied for ${DOMAIN}"
+}
+
 # ---------------------------------------------------------------------------
 main() {
     _ensure_root
     _init_log
-
     _parse_args "$@"
 
     if [[ -z "$DOMAIN" || -z "$INSTALL_MODE" || "$INTERACTIVE" == true ]]; then
@@ -488,21 +320,18 @@ main() {
 
     _validate_domain "$DOMAIN"
     [[ -n "$PHP_VERSION" ]] && _validate_php_version "$PHP_VERSION"
-    os_detect
-    os_validate_support
-    os_preflight
+    os_detect; os_validate_support; os_preflight
     _resolve_defaults
 
     if [[ "$DRY_RUN" == true ]]; then
         warn "DRY RUN — no changes will be made"
-        _print_plan
-        exit 0
+        _print_plan; exit 0
     fi
 
     _confirm_plan
 
     step "Starting UnderHost installation for ${BOLD}${DOMAIN}${RESET} [${INSTALL_MODE^^}]"
-    log_msg "Install started: domain=${DOMAIN} mode=${INSTALL_MODE} php=${PHP_VERSION} os=${OS_ID:-unknown} ${OS_VERSION:-}"
+    log_msg "Install started: domain=${DOMAIN} mode=${INSTALL_MODE} php=${PHP_VERSION} os=${OS_ID:-unknown} ${OS_VERSION:-} v${UNDERHOST_VERSION}"
 
     [[ "$BACKUP" == true ]] && _backup_configs
 
@@ -524,42 +353,38 @@ main() {
     fi
 
     ssl_provision
-
     hardening_apply
     [[ "$TUNE_SERVICES" == true ]] && optimize_tune
-
     [[ "$FTP_MODE" != "none" ]] && ftp_configure
 
     _restart_services
     summary_print
-
     log_msg "Install completed successfully: domain=${DOMAIN}"
 }
 
 # ---------------------------------------------------------------------------
 _print_plan() {
     info "Install plan:"
-    printf "  %-22s : %s\n" "Domain"        "${DOMAIN}"
-    printf "  %-22s : %s\n" "Mode"          "${INSTALL_MODE^^}"
-    printf "  %-22s : %s\n" "PHP version"   "${PHP_VERSION}"
-    printf "  %-22s : %s\n" "Document root" "${SITE_ROOT:-/var/www/${DOMAIN}}"
-    printf "  %-22s : %s\n" "Database"      "${ENABLE_DB}"
-    printf "  %-22s : %s\n" "Redis"         "${ENABLE_REDIS}"
-    printf "  %-22s : %s\n" "Firewall"      "${ENABLE_FIREWALL}"
-    printf "  %-22s : %s\n" "Fail2Ban"      "${ENABLE_FAIL2BAN}"
-    printf "  %-22s : %s\n" "FTP mode"      "${FTP_MODE}"
-    printf "  %-22s : %s\n" "SSL email"     "${SSL_EMAIL:-admin@${DOMAIN}}"
-    printf "  %-22s : %s\n" "Staging"       "${WP_STAGING}"
-    printf "  %-22s : %s\n" "Performance"   "${TUNE_SERVICES}"
-    printf "  %-22s : %s\n" "OS"            "${OS_ID:-unknown} ${OS_VERSION:-}"
-    printf "  %-22s : %s\n" "Installer"     "v${UNDERHOST_VERSION}"
+    printf "  %-24s : %s\n" "Domain"          "${DOMAIN}"
+    printf "  %-24s : %s\n" "Mode"            "${INSTALL_MODE^^}"
+    printf "  %-24s : %s\n" "PHP version"     "${PHP_VERSION}"
+    printf "  %-24s : %s\n" "Document root"   "${SITE_ROOT:-/var/www/${DOMAIN}}"
+    printf "  %-24s : %s\n" "Database"        "${ENABLE_DB}"
+    printf "  %-24s : %s\n" "Redis"           "${ENABLE_REDIS}"
+    printf "  %-24s : %s\n" "Firewall"        "${ENABLE_FIREWALL}"
+    printf "  %-24s : %s\n" "Fail2Ban"        "${ENABLE_FAIL2BAN}"
+    printf "  %-24s : %s\n" "Auto OS updates" "${ENABLE_AUTO_UPDATES}"
+    printf "  %-24s : %s\n" "FTP mode"        "${FTP_MODE}"
+    printf "  %-24s : %s\n" "SSL email"       "${SSL_EMAIL:-admin@${DOMAIN}}"
+    printf "  %-24s : %s\n" "Staging"         "${WP_STAGING}"
+    printf "  %-24s : %s\n" "Performance"     "${TUNE_SERVICES}"
+    printf "  %-24s : %s\n" "OS"              "${OS_ID:-unknown} ${OS_VERSION:-}"
+    printf "  %-24s : %s\n" "Installer"       "v${UNDERHOST_VERSION}"
 }
 
 _confirm_plan() {
     [[ "$SKIP_PROMPT" == true ]] && return
-    echo
-    _print_plan
-    echo
+    echo; _print_plan; echo
     prompt_yn "Proceed with installation?" "y" || die "Installation cancelled by user."
 }
 
@@ -567,11 +392,8 @@ _resolve_defaults() {
     SITE_ROOT="${SITE_ROOT:-/var/www/${DOMAIN}}"
     SSL_EMAIL="${SSL_EMAIL:-admin@${DOMAIN}}"
     ADMIN_EMAIL="${ADMIN_EMAIL:-${SSL_EMAIL}}"
-
-    # Safe slug: max 32 chars, alphanumeric + underscore
     local slug
     slug="$(echo "${DOMAIN}" | tr '.' '_' | tr -cd 'a-zA-Z0-9_' | cut -c1-32)"
-
     DB_NAME="${DB_NAME:-${slug}_db}"
     DB_USER="${DB_USER:-${slug}_usr}"
     DB_PASS="${DB_PASS:-$(gen_pass_db 24)}"
@@ -579,12 +401,8 @@ _resolve_defaults() {
     WP_ADMIN_PASS="${WP_ADMIN_PASS:-$(gen_pass 20)}"
     WP_ADMIN_EMAIL="${WP_ADMIN_EMAIL:-${ADMIN_EMAIL}}"
     WP_TITLE="${WP_TITLE:-${DOMAIN}}"
-
-    if [[ "$WP_STAGING" == true && "$WP_STAGING_TYPE" == "subdomain" ]]; then
-        STAGING_DOMAIN="${STAGING_DOMAIN:-staging.${DOMAIN}}"
-    fi
-
-    # Staging credentials
+    [[ "$WP_STAGING" == true && "$WP_STAGING_TYPE" == "subdomain" ]] \
+        && STAGING_DOMAIN="${STAGING_DOMAIN:-staging.${DOMAIN}}"
     STAGING_DB_NAME="${STAGING_DB_NAME:-${slug}_stg_db}"
     STAGING_DB_USER="${STAGING_DB_USER:-${slug}_stg_usr}"
     STAGING_DB_PASS="${STAGING_DB_PASS:-$(gen_pass_db 24)}"
@@ -596,78 +414,41 @@ _resolve_defaults() {
 
 _restart_services() {
     step "Restarting services"
-
     for svc in nginx mariadb; do
-        if systemctl restart "$svc" 2>/dev/null; then
-            ok "Restarted ${svc}"
-        else
-            warn "Could not restart ${svc} — check: journalctl -u ${svc} -n 20"
-        fi
+        systemctl restart "$svc" 2>/dev/null \
+            && ok "Restarted ${svc}" \
+            || warn "Could not restart ${svc}"
     done
-
-    # PHP-FPM service name differs per OS
     local php_fpm_svc
     php_fpm_svc="$(os_php_fpm_service 2>/dev/null || true)"
-
-    if [[ -z "$php_fpm_svc" ]]; then
-        # Derive from PHP version as fallback
-        if [[ "${OS_FAMILY:-}" == "debian" ]]; then
-            php_fpm_svc="php${PHP_VERSION}-fpm"
-        else
-            php_fpm_svc="php-fpm"
-        fi
-    fi
-
-    if systemctl restart "$php_fpm_svc" 2>/dev/null; then
-        ok "Restarted ${php_fpm_svc}"
-    else
-        warn "Could not restart PHP-FPM (${php_fpm_svc}) — check: systemctl status ${php_fpm_svc}"
-    fi
-
-    if [[ "$ENABLE_REDIS" == true ]]; then
-        systemctl restart redis-server 2>/dev/null \
-            || systemctl restart redis 2>/dev/null \
-            || warn "Could not restart Redis"
-    fi
-
-    if [[ "$ENABLE_FAIL2BAN" == true ]]; then
-        systemctl restart fail2ban 2>/dev/null || warn "Could not restart Fail2Ban"
-    fi
+    [[ -z "$php_fpm_svc" ]] && {
+        [[ "${OS_FAMILY:-}" == "debian" ]] \
+            && php_fpm_svc="php${PHP_VERSION}-fpm" \
+            || php_fpm_svc="php-fpm"
+    }
+    systemctl restart "$php_fpm_svc" 2>/dev/null \
+        && ok "Restarted ${php_fpm_svc}" \
+        || warn "Could not restart PHP-FPM (${php_fpm_svc})"
+    [[ "$ENABLE_REDIS"    == true ]] && { systemctl restart redis-server 2>/dev/null || systemctl restart redis 2>/dev/null || true; }
+    [[ "$ENABLE_FAIL2BAN" == true ]] && { systemctl restart fail2ban 2>/dev/null || true; }
 }
 
 _backup_configs() {
     local bdir="/root/uh_backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$bdir"
+    mkdir -p "$bdir"; chmod 700 "$bdir"
     step "Backing up existing configs to ${bdir}"
-
     local f
-    for f in \
-        /etc/nginx/nginx.conf \
-        /etc/my.cnf \
-        /etc/my.cnf.d/server.cnf \
-        /etc/mysql/mariadb.conf.d/50-server.cnf \
-        /etc/fail2ban/jail.local \
-        /etc/ssh/sshd_config
-    do
-        if [[ -f "$f" ]]; then
-            cp "$f" "$bdir/" && ok "Backed up ${f}"
-        fi
+    for f in /etc/nginx/nginx.conf /etc/my.cnf /etc/my.cnf.d/server.cnf \
+              /etc/mysql/mariadb.conf.d/50-server.cnf /etc/fail2ban/jail.local /etc/ssh/sshd_config; do
+        [[ -f "$f" ]] && cp "$f" "$bdir/" && ok "Backed up ${f}"
     done
-
     [[ -d /etc/nginx/conf.d ]] && cp -r /etc/nginx/conf.d "$bdir/nginx_conf.d" 2>/dev/null || true
-
-    # Safe mysqldump using defaults file to avoid password on process list
     if command -v mysqldump &>/dev/null && [[ -f /root/.my.cnf ]]; then
-        if mysqldump --defaults-extra-file=/root/.my.cnf --all-databases \
-                > "${bdir}/all_databases.sql" 2>/dev/null; then
-            ok "Backed up all databases to ${bdir}/all_databases.sql"
-            chmod 600 "${bdir}/all_databases.sql"
-        fi
-    else
-        warn "mysqldump skipped — /root/.my.cnf not present (run after first install)"
+        mysqldump --defaults-extra-file=/root/.my.cnf --all-databases \
+            > "${bdir}/all_databases.sql" 2>/dev/null \
+            && chmod 600 "${bdir}/all_databases.sql" \
+            && ok "Backed up all databases"
     fi
-
-    chmod 700 "$bdir"
     ok "Backup saved to: ${bdir}"
 }
 

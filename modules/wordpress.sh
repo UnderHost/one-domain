@@ -29,6 +29,9 @@ wp_install() {
     # 5. Harden wp-config.php and file permissions
     _wp_harden "$webroot" "$sys_user"
 
+    # 6. System cron for WP-Cron
+    wp_install_system_cron "$webroot" "$sys_user"
+
     # 6. Install Redis object cache plugin (optional)
     if [[ "${WP_REDIS:-false}" == true ]]; then
         _wp_install_redis_cache "$webroot" "$sys_user"
@@ -241,6 +244,9 @@ wp_reset_perms() {
 
     step "Resetting WordPress permissions for ${dom}"
     _wp_harden "$webroot" "$sys_user"
+
+    # 6. System cron for WP-Cron
+    wp_install_system_cron "$webroot" "$sys_user"
     ok "Permissions reset complete"
 }
 
@@ -339,4 +345,94 @@ wp_export_report() {
 
     chmod 600 "$report_file"
     ok "Report saved: ${report_file}"
+}
+
+# ---------------------------------------------------------------------------
+# Install system cron for WP-Cron (replaces unreliable wp-cron.php)
+# ---------------------------------------------------------------------------
+wp_install_system_cron() {
+    local webroot="$1"
+    local sys_user="$2"
+
+    local cron_file="/etc/cron.d/underhost_wpcron_${DOMAIN//\./_}"
+    cat > "$cron_file" <<CRON
+# UnderHost — WordPress system cron for ${DOMAIN}
+# Replaces wp-cron.php (DISABLE_WP_CRON=true in wp-config.php)
+*/5 * * * * ${sys_user} /usr/local/bin/wp cron event run --due-now --path=${webroot} --quiet 2>/dev/null
+CRON
+    chmod 644 "$cron_file"
+    ok "System cron installed for WP-Cron: ${cron_file}"
+
+    # Disable WP's built-in pseudo-cron
+    if grep -q 'DISABLE_WP_CRON' "${webroot}/wp-config.php" 2>/dev/null; then
+        sed -i "s/define.*DISABLE_WP_CRON.*/define( 'DISABLE_WP_CRON', true );/" \
+            "${webroot}/wp-config.php"
+    else
+        echo "define( 'DISABLE_WP_CRON', true );" >> "${webroot}/wp-config.php"
+    fi
+    ok "DISABLE_WP_CRON set in wp-config.php"
+}
+
+# ---------------------------------------------------------------------------
+# Update WordPress core + all plugins + all themes (with pre-update backup)
+# ---------------------------------------------------------------------------
+wp_update_all() {
+    local dom="${1:-$DOMAIN}"
+    [[ -z "$dom" ]] && die "Usage: install wp-update-all domain.com"
+
+    local webroot="/var/www/${dom}/public"
+    [[ ! -f "${webroot}/wp-includes/version.php" ]] \
+        && die "WordPress not found at ${webroot}"
+
+    local sys_user
+    sys_user="$(slug_from_domain "$dom" | cut -c1-16)_web"
+
+    step "WordPress full update for ${dom}"
+
+    # Pre-update backup
+    info "Creating pre-update backup..."
+    DOMAIN="$dom" backup_domain "$dom" 2>/dev/null \
+        && ok "Pre-update backup created" \
+        || warn "Backup failed — proceeding anyway (check backup module)"
+
+    # Core update
+    info "Updating WordPress core..."
+    wp_run "$dom" core update --quiet 2>/dev/null \
+        && ok "WordPress core updated" \
+        || info "WordPress core already at latest version"
+
+    wp_run "$dom" core update-db --quiet 2>/dev/null \
+        && ok "WordPress database updated" || true
+
+    # Plugin updates
+    info "Updating all plugins..."
+    local plugin_count
+    plugin_count="$(wp_run "$dom" plugin list --update=available --format=count 2>/dev/null || echo 0)"
+    if (( plugin_count > 0 )); then
+        wp_run "$dom" plugin update --all --quiet 2>/dev/null \
+            && ok "Updated ${plugin_count} plugin(s)" \
+            || warn "Some plugin updates failed — check manually"
+    else
+        ok "All plugins up to date"
+    fi
+
+    # Theme updates
+    info "Updating all themes..."
+    local theme_count
+    theme_count="$(wp_run "$dom" theme list --update=available --format=count 2>/dev/null || echo 0)"
+    if (( theme_count > 0 )); then
+        wp_run "$dom" theme update --all --quiet 2>/dev/null \
+            && ok "Updated ${theme_count} theme(s)" \
+            || warn "Some theme updates failed — check manually"
+    else
+        ok "All themes up to date"
+    fi
+
+    # Reset permissions after updates
+    _wp_harden "$webroot" "$sys_user"
+
+    # 6. System cron for WP-Cron
+    wp_install_system_cron "$webroot" "$sys_user"
+
+    ok "WordPress update complete for ${dom}"
 }

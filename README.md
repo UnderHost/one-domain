@@ -3,6 +3,8 @@
 **A production-grade, single-domain deployment tool for PHP and WordPress**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![ShellCheck](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml)
+[![Version](https://img.shields.io/badge/version-2026.4.0-green.svg)](https://github.com/UnderHost/one-domain/blob/main/docs/CHANGELOG.md)
 [![UnderHost](https://img.shields.io/badge/by-UnderHost.com-orange)](https://underhost.com)
 
 ---
@@ -373,6 +375,81 @@ cat /var/log/underhost_install.log
 
 ---
 
+## New in 2026.4.0
+
+### Server Information & Auditing
+
+```bash
+# Show installer environment, software versions, connectivity
+sudo ./install info
+
+# List all managed domains with SSL expiry and status
+sudo ./install list
+
+# Pre-flight check before installing on a new server
+sudo ./install check-deps
+
+# Security baseline audit (read-only, no changes made)
+sudo ./install audit domain.com
+
+# Re-apply full stack config without touching data
+sudo ./install apply domain.com
+```
+
+### Backup & Restore
+
+```bash
+# On-demand full backup (files + database, auto-pruned)
+sudo ./install backup domain.com
+
+# Install automatic scheduled backup (daily systemd timer)
+sudo ./install backup-auto domain.com
+
+# List available backups
+sudo ./install backup-list domain.com
+
+# Interactive restore from backup
+sudo ./install restore domain.com
+
+# Remote backup destination (set in flags or config file)
+sudo ./install backup domain.com --backup-dest rsync:user@host:/backups
+sudo ./install backup domain.com --backup-dest rclone:b2:my-bucket
+```
+
+### Config File (new)
+
+Set project-wide defaults without repeating flags:
+
+```bash
+# System-wide defaults
+sudo mkdir -p /etc/underhost
+sudo cp configs/defaults.conf.example /etc/underhost/defaults.conf
+sudo nano /etc/underhost/defaults.conf
+
+# Per-user defaults
+cp configs/defaults.conf.example ~/.one-domain.conf
+```
+
+Example `defaults.conf`:
+
+```bash
+PHP_VERSION="8.4"
+SSL_EMAIL="ops@mycompany.com"
+BACKUP_RETENTION_DAYS=30
+BACKUP_REMOTE_DEST="rclone:b2:my-backups"
+ENABLE_AUTO_UPDATES=true
+```
+
+### WordPress
+
+```bash
+# Update core + all plugins + all themes (with pre-update backup)
+sudo ./install wp-update-all domain.com
+```
+
+---
+
+
 ## Project Structure
 
 ```
@@ -401,8 +478,14 @@ cat /var/log/underhost_install.log
 │   ├── status.sh            # Health check
 │   ├── diagnose.sh          # Diagnostic report
 │   ├── repair.sh            # Interactive repair wizard
-│   └── selfupdate.sh        # Self-update from GitHub
+│   ├── selfupdate.sh        # Self-update from GitHub
+│   ├── backup.sh            # Backup, restore, schedule, prune
+│   ├── info.sh              # Server & installer environment info
+│   ├── list.sh              # List all managed domains
+│   ├── audit.sh             # Security baseline audit
+│   └── checkdeps.sh         # Pre-flight dependency checker
 ├── configs/
+│   ├── defaults.conf.example       # Global config file template
 │   └── examples/
 │       ├── nginx-vhost.conf.example
 │       └── php-fpm-pool.conf.example
