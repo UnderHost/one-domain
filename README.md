@@ -3,8 +3,8 @@
 **A production-grade, single-domain deployment tool for PHP and WordPress**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-[![ShellCheck](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml/badge.svg?branch=release%2F2026.4.0)](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml)
-[![Version](https://img.shields.io/badge/version-2026.3.0-green.svg)]([https://github.com/UnderHost/one-domain/blob/release/2026.3.0/docs/CHANGELOG.md](https://github.com/UnderHost/one-domain/blob/main/docs/CHANGELOG.md))
+[![ShellCheck](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml/badge.svg?branch=main)](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml)
+[![Version](https://img.shields.io/badge/version-2026.3.0-green.svg)](https://github.com/UnderHost/one-domain/blob/main/docs/CHANGELOG.md)
 [![UnderHost](https://img.shields.io/badge/by-UnderHost.com-60A5FA?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSIjRkZGRkZGIj48cG9seWdvbiBwb2ludHM9IjEyIDIgMiA3IDIgMTcgMTIgMjIgMjIgMTcgMjIgNyAxMiAyIi8+PC9zdmc+)](https://underhost.com)
 
 ---
