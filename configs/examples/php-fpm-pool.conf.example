@@ -1,0 +1,55 @@
+; =============================================================================
+;  UnderHost One-Domain — Example PHP-FPM Pool Configuration
+;  configs/examples/php-fpm-pool.conf.example
+; =============================================================================
+; Replace DOMAIN, SOCKET_PATH, SITE_ROOT, SYS_USER with real values.
+; Tuned values (pm.max_children, opcache.memory_consumption) are set
+; automatically by the installer based on available RAM.
+; =============================================================================
+
+[DOMAIN]
+user  = SYS_USER
+group = SYS_USER
+
+listen       = SOCKET_PATH
+listen.owner = nginx
+listen.group = nginx
+listen.mode  = 0660
+
+; Process management — 'dynamic' is best for single-site VPS
+pm                   = dynamic
+pm.max_children      = 10
+pm.start_servers     = 3
+pm.min_spare_servers = 2
+pm.max_spare_servers = 5
+pm.max_requests      = 500
+
+; Logging
+access.log                        = /var/log/php-fpm/DOMAIN.access.log
+php_admin_value[error_log]        = /var/log/php-fpm/DOMAIN.error.log
+php_admin_flag[log_errors]        = on
+slowlog                           = /var/log/php-fpm/DOMAIN.slow.log
+request_slowlog_timeout           = 10s
+
+; Security
+security.limit_extensions = .php
+php_admin_value[open_basedir]   = SITE_ROOT:/tmp:/usr/share/php
+php_admin_value[upload_tmp_dir] = SITE_ROOT/tmp
+php_flag[display_errors]        = off
+php_admin_flag[expose_php]      = off
+
+; Resource limits
+php_admin_value[memory_limit]          = 256M
+php_admin_value[max_execution_time]    = 60
+php_admin_value[post_max_size]         = 64M
+php_admin_value[upload_max_filesize]   = 64M
+
+; OPcache — adjust memory_consumption based on server RAM
+php_admin_value[opcache.enable]                  = 1
+php_admin_value[opcache.memory_consumption]      = 256
+php_admin_value[opcache.interned_strings_buffer] = 16
+php_admin_value[opcache.max_accelerated_files]   = 10000
+php_admin_value[opcache.revalidate_freq]         = 60
+php_admin_value[opcache.save_comments]           = 1
+; Set validate_timestamps=1 during development, 0 in production
+php_admin_value[opcache.validate_timestamps]     = 0
