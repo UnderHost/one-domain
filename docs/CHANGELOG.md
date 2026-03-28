@@ -92,3 +92,63 @@ Versioning follows `YYYY.MINOR.PATCH`.
 [Unreleased]: https://github.com/UnderHost/one-domain/compare/v2026.3.0...HEAD
 [2026.3.0]: https://github.com/UnderHost/one-domain/compare/v2026.2.0...v2026.3.0
 [2026.2.0]: https://github.com/UnderHost/one-domain/releases/tag/v2026.2.0
+
+---
+
+## [2026.4.0] — 2026-03-28
+
+### Added — New Commands
+- `install info` — shows installer version, OS, hardware, software versions, service status, and external connectivity
+- `install list` — lists all domains managed by the installer on the current server with SSL expiry, mode, PHP version, and disk usage
+- `install check-deps` — pre-flight checker for required tools, package manager health, external endpoint connectivity, and system readiness
+- `install audit [domain]` — read-only security baseline audit with colour-coded pass/fail/warn checklist (system, Nginx, MariaDB, PHP, WordPress, SSL)
+- `install apply <domain>` — idempotent re-application of Nginx vhost, PHP-FPM pool, and hardening without touching data
+- `install backup <domain>` — on-demand full backup: compressed site files archive + gzipped database dump, with automatic pruning
+- `install backup-auto <domain>` — installs a systemd service + timer for scheduled automatic backups (daily or weekly)
+- `install restore <domain>` — interactive restore wizard: lists available backups, confirms before overwriting, restores files and database, fixes ownership
+- `install backup-list <domain>` — lists available backup archives with sizes and timestamps
+- `install wp-update-all <domain>` — updates WordPress core, all plugins, and all themes with a pre-update backup
+- `--no-auto-updates` flag — skip automatic OS security update configuration
+- `--backup-dest DEST` flag — remote backup destination (`rsync:` or `rclone:` prefix)
+- `--backup-retention DAYS` flag — days to retain backup archives (default: 14)
+
+### Added — New Modules
+- `modules/backup.sh` — full backup, restore, schedule, list, prune, and optional remote sync (rsync/rclone)
+- `modules/info.sh` — server environment display with connectivity checks
+- `modules/list.sh` — managed domain discovery from `/var/www/` cross-referenced with Nginx and SSL
+- `modules/audit.sh` — security baseline checker with 30+ checks across system, Nginx, MariaDB, PHP, and per-domain
+- `modules/checkdeps.sh` — pre-flight tool availability, package manager health, DNS, port, and connectivity checks
+
+### Added — Config File Support
+- `/etc/underhost/defaults.conf` and `~/.one-domain.conf` — optional config files for setting project-wide defaults
+- `configs/defaults.conf.example` — fully commented example config with all supported variables
+- New global vars: `BACKUP_ROOT`, `BACKUP_RETENTION_DAYS`, `BACKUP_REMOTE_DEST`, `BACKUP_SCHEDULE`, `ENABLE_AUTO_UPDATES`
+
+### Added — Features in Existing Modules
+- `modules/hardening.sh`: `hardening_auto_updates()` — installs `unattended-upgrades` (Debian/Ubuntu) or `dnf-automatic` (AlmaLinux), security-only, no auto-reboot
+- `modules/hardening.sh`: `hardening_install_ssh_key()` — adds SSH public key to `authorized_keys`, optionally disables password auth with sshd validation
+- `modules/php.sh`: OPcache JIT enabled (`opcache.jit=tracing`, `opcache.jit_buffer_size=64M`) for PHP 8.0+ — 10–30% CPU improvement
+- `modules/nginx.sh`: HTTP/3 QUIC support — detects Nginx ≥ 1.25.1 and adds `listen 443 quic` and `Alt-Svc` header automatically
+- `modules/wordpress.sh`: `wp_install_system_cron()` — replaces unreliable `wp-cron.php` with a real system cron job; sets `DISABLE_WP_CRON=true`
+- `modules/wordpress.sh`: `wp_update_all()` — pre-backup + core + plugin + theme update in one command
+- `modules/prompts.sh`: Step 8 — SSH key install prompt in advanced wizard
+- `modules/prompts.sh`: Step 8 — auto OS updates toggle in advanced wizard (9 steps total, up from 7)
+- `install`: `_print_plan()` now shows `Auto OS updates` row
+- `install`: `ENABLE_AUTO_UPDATES` wired through hardening_apply — applies on every fresh install
+
+### Changed
+- `install` version bump: `2026.3.0` → `2026.4.0`
+- Module loader now references `_REQUIRED_MODULES` array (includes all 5 new modules)
+- `install list` uses exact `_REQUIRED_MODULES` list in CI validation
+- `.github/workflows/shellcheck.yml` updated to validate all 5 new modules are present and not deprecated
+- `_backup_configs()` in `install` uses `--defaults-extra-file=/root/.my.cnf` (inherited fix from 2026.3.0)
+
+### Security
+- Automatic OS security updates now configured by default on every fresh install (`--no-auto-updates` to skip)
+- SSH public key can be installed interactively during wizard — password auth optionally disabled post-key-install
+- `audit` module detects and reports on 30+ security baseline items without making any changes
+- `backup_domain` creates archives with mode `600`; backup directory set to mode `700`
+
+---
+
+[2026.4.0]: https://github.com/UnderHost/one-domain/compare/v2026.3.0...v2026.4.0

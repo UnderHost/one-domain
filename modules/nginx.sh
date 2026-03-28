@@ -19,6 +19,13 @@ nginx_configure_vhost() {
     # AlmaLinux/RHEL socket path
     [[ "$OS_FAMILY" == "rhel" ]] && php_socket="/run/php-fpm/${DOMAIN}.sock"
 
+    # Detect if Nginx supports HTTP/3 (1.25.1+)
+    local nginx_ver http3_listen=""
+    nginx_ver="$(nginx -v 2>&1 | grep -oP '[\d.]+' | head -1)"
+    if _version_gte "$nginx_ver" "1.25.1" 2>/dev/null; then
+        http3_listen="    listen [::]:443 quic reuseport;"
+    fi
+
     # Create document root
     mkdir -p "$webroot"
 
@@ -34,6 +41,10 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${DOMAIN}$(${CANONICAL_WWW} && echo " www.${DOMAIN}" || echo "");
+
+    # HTTP/3 QUIC (injected when Nginx >= 1.25.1)
+$([ -n "${http3_listen}" ] && printf '%s\n' "${http3_listen}")
+$([ -n "${http3_listen}" ] && echo "    add_header Alt-Svc 'h3=\"\:443\"; ma=86400' always;")
 
     root ${webroot};
     index index.php index.html;

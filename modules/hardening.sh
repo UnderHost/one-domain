@@ -23,6 +23,7 @@ hardening_apply() {
     step "Applying security hardening"
     harden_apply_system
     harden_apply_domain "${DOMAIN:-}"
+    hardening_auto_updates
     ok "Security hardening complete"
 }
 
@@ -323,4 +324,96 @@ EOF
 
     svc_enable_start fail2ban
     ok "Fail2Ban configured with SSH + Nginx jails"
+}
+
+# ---------------------------------------------------------------------------
+# Auto OS security updates — called from hardening_apply() in v4
+# ---------------------------------------------------------------------------
+hardening_auto_updates() {
+    step "Configuring automatic OS security updates"
+    case "$OS_PKG_MGR" in
+        apt)  _harden_unattended_upgrades ;;
+        dnf)  _harden_dnf_automatic       ;;
+    esac
+}
+
+_harden_unattended_upgrades() {
+    apt-get -y -qq install --no-install-recommends unattended-upgrades apt-listchanges
+
+    cat > /etc/apt/apt.conf.d/50unattended-upgrades-underhost <<'EOF'
+// UnderHost — Automatic security updates
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+};
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Mail "root";
+EOF
+
+    cat > /etc/apt/apt.conf.d/20auto-upgrades-underhost <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+    systemctl enable --now unattended-upgrades 2>/dev/null || true
+    ok "unattended-upgrades configured (security only, no auto-reboot)"
+}
+
+_harden_dnf_automatic() {
+    dnf -q -y install dnf-automatic
+
+    local conf="/etc/dnf/automatic.conf"
+    [[ -f "$conf" ]] && sed -i \
+        -e 's/^apply_updates = .*/apply_updates = yes/' \
+        -e 's/^upgrade_type = .*/upgrade_type = security/' \
+        "$conf"
+
+    systemctl enable --now dnf-automatic.timer 2>/dev/null || true
+    ok "dnf-automatic configured (security updates only)"
+}
+
+# ---------------------------------------------------------------------------
+# SSH key install helper — called from wizard in v4
+# ---------------------------------------------------------------------------
+hardening_install_ssh_key() {
+    local pub_key="${1:-}"
+    [[ -z "$pub_key" ]] && die "No SSH public key provided"
+
+    # Validate it looks like an SSH public key
+    if ! echo "$pub_key" | grep -qE '^(ssh-rsa|ssh-ed25519|ecdsa-sha2|sk-ssh)'; then
+        die "Does not look like a valid SSH public key: ${pub_key:0:40}..."
+    fi
+
+    local auth_keys="/root/.ssh/authorized_keys"
+    mkdir -p /root/.ssh
+    chmod 700 /root/.ssh
+
+    # Add only if not already present
+    if grep -qF "$pub_key" "$auth_keys" 2>/dev/null; then
+        ok "SSH key already in authorized_keys — skipping"
+        return
+    fi
+
+    echo "$pub_key" >> "$auth_keys"
+    chmod 600 "$auth_keys"
+    ok "SSH public key added to ${auth_keys}"
+
+    # Offer to disable password auth now that a key exists
+    if prompt_yn "Disable SSH password authentication now? (key-only login)" "n"; then
+        _sshd_set "PasswordAuthentication" "no"
+        if sshd -t 2>/dev/null; then
+            systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+            ok "SSH password authentication disabled"
+            warn "Ensure your key works BEFORE closing this session."
+        else
+            warn "sshd config invalid — reverting PasswordAuthentication change"
+            _sshd_set "PasswordAuthentication" "yes"
+        fi
+    fi
 }

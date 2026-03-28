@@ -1,0 +1,65 @@
+# =============================================================================
+#  UnderHost One-Domain — Global Defaults Config
+#  /etc/underhost/defaults.conf  OR  ~/.one-domain.conf
+# =============================================================================
+# Copy this file to one of the above paths and uncomment what you need.
+# CLI flags always override values set here.
+# This file is sourced as bash, so follow bash variable assignment syntax.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# PHP
+# ---------------------------------------------------------------------------
+# Default PHP version to install (8.1 | 8.2 | 8.3 | 8.4)
+# PHP_VERSION="8.3"
+
+# ---------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------
+# Default email for Let's Encrypt certificates and admin notifications
+# SSL_EMAIL="ops@yourcompany.com"
+# ADMIN_EMAIL="ops@yourcompany.com"
+
+# ---------------------------------------------------------------------------
+# Features — enable/disable globally
+# ---------------------------------------------------------------------------
+# ENABLE_REDIS=false
+# ENABLE_FIREWALL=true
+# ENABLE_FAIL2BAN=true
+# ENABLE_AUTO_UPDATES=true
+# CONFIGURE_SWAP=true
+# TUNE_SERVICES=true
+
+# ---------------------------------------------------------------------------
+# Backup
+# ---------------------------------------------------------------------------
+# Root directory for all backup archives
+# BACKUP_ROOT="/var/backups/underhost"
+
+# Days to retain backup archives before pruning
+# BACKUP_RETENTION_DAYS=14
+
+# Automatic backup schedule for backup-auto command (daily | weekly)
+# BACKUP_SCHEDULE="daily"
+
+# Remote backup destination — leave empty to disable remote sync
+# Examples:
+#   rsync to a remote server:     BACKUP_REMOTE_DEST="rsync:backupuser@backup.example.com:/backups"
+#   rclone to S3/B2/R2:          BACKUP_REMOTE_DEST="rclone:s3-remote:my-bucket/backups"
+#   rclone to Backblaze B2:       BACKUP_REMOTE_DEST="rclone:b2-remote:my-bucket/backups"
+# BACKUP_REMOTE_DEST=""
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# LOG_FILE="/var/log/underhost_install.log"
+
+# ---------------------------------------------------------------------------
+# Example: agency / managed hosting defaults
+# ---------------------------------------------------------------------------
+# PHP_VERSION="8.3"
+# SSL_EMAIL="infra@myagency.com"
+# ENABLE_AUTO_UPDATES=true
+# BACKUP_RETENTION_DAYS=30
+# BACKUP_REMOTE_DEST="rclone:b2:agency-backups"
+# BACKUP_SCHEDULE="daily"

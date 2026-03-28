@@ -105,6 +105,11 @@ php_admin_value[opcache.revalidate_freq]         = 60
 php_admin_value[opcache.save_comments]           = 1
 php_admin_value[opcache.validate_timestamps]     = 0
 ; Note: set validate_timestamps=1 during development
+
+; OPcache JIT — PHP 8.0+ only, stable in 8.2+
+; Provides 10-30% improvement on CPU-bound workloads
+php_admin_value[opcache.jit]                     = tracing
+php_admin_value[opcache.jit_buffer_size]         = 64M
 EOF
 
     mkdir -p /var/log/php-fpm
