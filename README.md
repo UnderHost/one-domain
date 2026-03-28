@@ -3,6 +3,8 @@
 **A production-grade, single-domain deployment tool for PHP and WordPress**
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![ShellCheck](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml)
+[![Version](https://img.shields.io/badge/version-2026.3.0-green.svg)](https://github.com/UnderHost/one-domain/blob/main/docs/CHANGELOG.md)
 [![UnderHost](https://img.shields.io/badge/by-UnderHost.com-orange)](https://underhost.com)
 
 ---
