@@ -2,11 +2,11 @@
 
 **A production-grade, single-domain deployment tool for PHP and WordPress**
 
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-[![ShellCheck](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml)
-[![Version](https://img.shields.io/badge/version-2026.4.0-green.svg)](https://github.com/UnderHost/one-domain/blob/main/docs/CHANGELOG.md)
-[![Latest Beta](https://img.shields.io/github/v/release/UnderHost/one-domain?include_prereleases&label=beta&color=red)](https://github.com/UnderHost/one-domain/releases)
-[![UnderHost](https://img.shields.io/badge/by-UnderHost.com-orange)](https://underhost.com)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-60A5FA.svg)](LICENSE)
+[![ShellCheck](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml/badge.svg?branch=release%2F2026.4.0)](https://github.com/UnderHost/one-domain/actions/workflows/shellcheck.yml)
+[![Version](https://img.shields.io/badge/version-2026.4.0--beta-60A5FA.svg)](https://github.com/UnderHost/one-domain/blob/release/2026.4.0/docs/CHANGELOG.md)
+[![Latest Beta](https://img.shields.io/github/v/release/UnderHost/one-domain?include_prereleases&label=beta&color=22D3EE)](https://github.com/UnderHost/one-domain/releases)
+[![UnderHost](https://img.shields.io/badge/by-UnderHost.com-60A5FA?style=flat-square)](https://underhost.com)
 
 ---
 
