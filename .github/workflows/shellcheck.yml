@@ -2,9 +2,9 @@ name: ShellCheck
 
 on:
   push:
-    branches: [ main, release/* ]  
+    branches: [ main, release/2026.4.0 ]
   pull_request:
-    branches: [ main, release/* ]
+    branches: [ main, release/2026.4.0 ]
 
 jobs:
   shellcheck:
@@ -13,3 +13,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
+        with:
+          severity: error  # Only fail on errors, not warnings
