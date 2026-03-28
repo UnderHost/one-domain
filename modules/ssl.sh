@@ -1,121 +1,100 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  modules/ssl.sh — Let's Encrypt SSL provisioning via Certbot
+#  modules/ssl.sh — SSL certificate provisioning via Certbot
 # =============================================================================
 
 ssl_provision() {
     step "Provisioning SSL certificate for ${DOMAIN}"
 
-    # Ensure the webroot exists for ACME challenge
+    command -v certbot &>/dev/null || {
+        warn "certbot not installed — installing"
+        case "$PKG_MGR" in
+            apt) DEBIAN_FRONTEND=noninteractive apt-get install -y -q certbot python3-certbot-nginx &>/dev/null ;;
+            dnf) dnf install -y certbot python3-certbot-nginx &>/dev/null ;;
+        esac
+    }
+
+    # Create webroot for ACME challenges (certbot --nginx manages this itself,
+    # but we keep the dir for webroot fallback)
     mkdir -p /var/www/letsencrypt/.well-known/acme-challenge
 
-    local san_args=("-d" "${DOMAIN}")
-    # Only request www SAN if we're also serving www (it must resolve)
-    san_args+=("-d" "www.${DOMAIN}")
+    # Check DNS resolves to this server before trying to get cert
+    _ssl_check_dns
 
-    local cert_ok=false
+    # Request certificate
+    local certbot_domains=(-d "${DOMAIN}" -d "www.${DOMAIN}")
+    [[ "${WP_STAGING:-false}" == true && -n "${STAGING_DOMAIN:-}" ]] \
+        && certbot_domains+=(-d "${STAGING_DOMAIN}")
 
-    # Try the Nginx plugin first (handles all redirects automatically)
     if certbot --nginx \
-            "${san_args[@]}" \
+            "${certbot_domains[@]}" \
             --non-interactive \
             --agree-tos \
             --email "${SSL_EMAIL}" \
             --redirect \
             2>&1 | tee -a "${LOG_FILE}"; then
-        cert_ok=true
-        ok "SSL certificate obtained and Nginx updated"
+        ok "SSL certificate obtained for ${DOMAIN}"
+        _ssl_enable_renewal_timer
     else
-        # Fallback: webroot method
-        warn "Nginx plugin failed. Trying webroot method..."
-        if certbot certonly \
-                --webroot -w /var/www/letsencrypt \
-                "${san_args[@]}" \
-                --non-interactive \
-                --agree-tos \
-                --email "${SSL_EMAIL}" \
-                2>&1 | tee -a "${LOG_FILE}"; then
-            cert_ok=true
-            _ssl_patch_vhost
-            ok "SSL certificate obtained via webroot"
-        fi
+        warn "certbot failed — possible causes:"
+        warn "  • DNS for ${DOMAIN} not pointing to this server"
+        warn "  • Port 80 not reachable from the internet"
+        warn "  • Rate limit hit (5 certs per domain per week)"
+        warn "Retry manually: certbot --nginx -d ${DOMAIN} -d www.${DOMAIN} --email ${SSL_EMAIL}"
     fi
+}
 
-    if [[ "$cert_ok" == false ]]; then
-        warn "Could not obtain SSL certificate. This may be because:"
-        warn "  • DNS for ${DOMAIN} does not yet point to this server"
-        warn "  • Port 80 is blocked by an upstream firewall"
-        warn "  • www.${DOMAIN} is not configured in DNS"
-        warn "Run manually later: certbot --nginx -d ${DOMAIN} -d www.${DOMAIN}"
+# ---------------------------------------------------------------------------
+ssl_renew_test() {
+    local domain="${1:-$DOMAIN}"
+    step "Testing SSL renewal for ${domain}"
+    certbot renew --dry-run --cert-name "${domain}" 2>&1 \
+        && ok "SSL renewal test passed" \
+        || warn "SSL renewal test failed — check certbot config"
+}
+
+# ---------------------------------------------------------------------------
+_ssl_check_dns() {
+    local server_ip
+    server_ip="$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null \
+              || hostname -I 2>/dev/null | awk '{print $1}')"
+
+    local resolved_ip
+    resolved_ip="$(dig +short "${DOMAIN}" A 2>/dev/null | tail -1 \
+               || host "${DOMAIN}" 2>/dev/null | awk '/has address/{print $NF}' | head -1 \
+               || echo "")"
+
+    if [[ -z "$resolved_ip" ]]; then
+        warn "DNS for ${DOMAIN} is not resolving yet."
+        warn "SSL certificate request may fail. Continuing anyway..."
+    elif [[ "$resolved_ip" != "$server_ip" ]]; then
+        info "DNS for ${DOMAIN} → ${resolved_ip} (this server: ${server_ip})"
+        info "Looks like CDN/proxy — SSL may still work if proxied correctly."
+    else
+        ok "DNS for ${DOMAIN} resolves to this server (${server_ip})"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+_ssl_enable_renewal_timer() {
+    # Prefer systemd timer over cron
+    if systemctl list-unit-files certbot.timer &>/dev/null; then
+        systemctl enable --now certbot.timer 2>/dev/null \
+            && ok "certbot.timer enabled (automatic renewal)"
         return
     fi
 
-    _ssl_configure_renewal
-    _ssl_harden_nginx_ssl
-}
+    if systemctl list-unit-files snap.certbot.renew.timer &>/dev/null; then
+        systemctl enable --now snap.certbot.renew.timer 2>/dev/null \
+            && ok "snap certbot renewal timer enabled"
+        return
+    fi
 
-# ---------------------------------------------------------------------------
-# Manually patch the vhost to use the certificate (webroot fallback)
-# ---------------------------------------------------------------------------
-_ssl_patch_vhost() {
-    local cert_path="/etc/letsencrypt/live/${DOMAIN}"
-    [[ -d "$cert_path" ]] || return
-
-    local vhost_file="/etc/nginx/conf.d/${DOMAIN}.conf"
-    [[ -f "$vhost_file" ]] || return
-
-    # Append an HTTPS server block to the existing HTTP-only vhost
-    cat >> "${vhost_file}" <<SSL_BLOCK
-
-server {
-    listen      443 ssl http2;
-    listen      [::]:443 ssl http2;
-    server_name ${DOMAIN} www.${DOMAIN};
-    root        ${SITE_ROOT};
-    index       index.php index.html;
-
-    ssl_certificate     ${cert_path}/fullchain.pem;
-    ssl_certificate_key ${cert_path}/privkey.pem;
-    include             /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
-
-    include /etc/nginx/conf.d/${DOMAIN}-locations.conf;
-}
-SSL_BLOCK
-
-    nginx -t 2>/dev/null && systemctl reload nginx
-}
-
-# ---------------------------------------------------------------------------
-_ssl_harden_nginx_ssl() {
-    # Write a global SSL hardening snippet
-    cat > /etc/nginx/snippets/uh-ssl.conf <<'SSLCFG'
-# UnderHost SSL hardening snippet
-ssl_protocols       TLSv1.2 TLSv1.3;
-ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
-ssl_prefer_server_ciphers off;
-ssl_session_cache   shared:SSL:10m;
-ssl_session_timeout 1d;
-ssl_session_tickets off;
-ssl_stapling        on;
-ssl_stapling_verify on;
-resolver 1.1.1.1 8.8.8.8 valid=300s;
-resolver_timeout    5s;
-SSLCFG
-
-    mkdir -p /etc/nginx/snippets
-    ok "SSL hardening snippet written to /etc/nginx/snippets/uh-ssl.conf"
-}
-
-# ---------------------------------------------------------------------------
-_ssl_configure_renewal() {
-    # Certbot installs a systemd timer or cron automatically on most systems.
-    # We add a deploy hook to reload Nginx after renewal.
-    mkdir -p /etc/letsencrypt/renewal-hooks/deploy
-    cat > /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'HOOK'
-#!/bin/bash
-systemctl reload nginx
-HOOK
-    chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
-    ok "SSL auto-renewal hook configured"
+    # Fallback: add cron job
+    if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
+        (crontab -l 2>/dev/null; \
+            echo "0 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx' 2>/dev/null") \
+            | crontab -
+        ok "certbot renewal cron job added (daily at 03:00)"
+    fi
 }

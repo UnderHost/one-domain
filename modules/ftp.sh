@@ -1,176 +1,161 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  modules/ftp.sh — FTP/SFTP access configuration
+#  modules/ftp.sh — SFTP-only and FTP-TLS user configuration
 # =============================================================================
 
 ftp_configure() {
+    step "Configuring file access: ${FTP_MODE}"
+
     case "$FTP_MODE" in
-        sftp)      _ftp_sftp_only ;;
-        ftp-tls)   _ftp_vsftpd_tls ;;
-        ftp-legacy)
-            security_warning \
-                "Legacy FTP (unencrypted) is being configured." \
-                "Credentials will be sent in plaintext over the network." \
-                "This is strongly discouraged in production environments."
-            _ftp_vsftpd_legacy
-            ;;
-        none) return ;;
+        sftp)     _ftp_sftp_only ;;
+        ftp-tls)  _ftp_vsftpd_tls ;;
+        none)     info "File access: none — skipped" ;;
+        *)        warn "Unknown FTP mode: ${FTP_MODE}" ;;
     esac
 }
 
-# ---------------------------------------------------------------------------
-# SFTP only: create a dedicated system user with chroot
 # ---------------------------------------------------------------------------
 _ftp_sftp_only() {
-    step "Configuring SFTP access for ${DOMAIN}"
+    local site_user="${DOMAIN//./_}"
+    site_user="${site_user:0:32}"
+    local sftp_user="${site_user}_sftp"
+    local sftp_pass
+    sftp_pass="$(gen_pass 20)"
 
-    local ftp_user="${DOMAIN//./_}_sftp"
-    ftp_user="${ftp_user:0:32}"
-    local ftp_pass
-    ftp_pass="$(gen_pass 20)"
-    FTP_USER="$ftp_user"
-    FTP_PASS="$ftp_pass"
+    info "Creating SFTP user: ${sftp_user}"
 
-    if ! id "$ftp_user" &>/dev/null; then
-        useradd -m -d "/home/${ftp_user}" -s /usr/sbin/nologin \
-            -c "SFTP user for ${DOMAIN}" "$ftp_user"
-    fi
-    echo "${ftp_user}:${ftp_pass}" | chpasswd
+    useradd -m -s /usr/sbin/nologin \
+        -d "${SITE_ROOT}" \
+        -c "SFTP user for ${DOMAIN}" \
+        "$sftp_user" 2>/dev/null \
+        || usermod -d "${SITE_ROOT}" "$sftp_user" 2>/dev/null || true
 
-    # Bind-mount the site root into the user's home
-    mkdir -p "/home/${ftp_user}/www"
-    mount --bind "${SITE_ROOT}" "/home/${ftp_user}/www" 2>/dev/null \
-        || ln -sfn "${SITE_ROOT}" "/home/${ftp_user}/www"
+    echo "${sftp_user}:${sftp_pass}" | chpasswd
 
-    # SSHD chroot group
-    if ! grep -q "^Match Group sftponly" /etc/ssh/sshd_config; then
-        cat >> /etc/ssh/sshd_config <<SSHCFG
+    # Chroot the SFTP user to the site root
+    _ftp_add_sftp_chroot "$sftp_user"
 
-# UnderHost SFTP-only configuration
-Match Group sftponly
-    ChrootDirectory %h
-    ForceCommand internal-sftp -l INFO
-    AllowTcpForwarding no
-    X11Forwarding no
-SSHCFG
-    fi
+    # Export for summary
+    FTP_USER="$sftp_user"
+    FTP_PASS="$sftp_pass"
 
-    groupadd -f sftponly
-    usermod -aG sftponly "$ftp_user"
-
-    # Chroot requires root ownership on the home directory
-    chown root:root "/home/${ftp_user}"
-    chmod 755 "/home/${ftp_user}"
-    chown "${ftp_user}:${ftp_user}" "/home/${ftp_user}/www" 2>/dev/null || true
-
-    systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
-    ok "SFTP user '${ftp_user}' configured (chrooted to /home/${ftp_user})"
-    info "Connect via: sftp ${ftp_user}@${DOMAIN}"
+    ok "SFTP user created: ${sftp_user}"
+    info "  Connect: sftp ${sftp_user}@${DOMAIN}"
 }
 
 # ---------------------------------------------------------------------------
-# vsftpd with TLS (FTPS)
+_ftp_add_sftp_chroot() {
+    local sftp_user="$1"
+    local sshd_config="/etc/ssh/sshd_config"
+
+    # Check if Match block already exists
+    if grep -q "Match User ${sftp_user}" "$sshd_config" 2>/dev/null; then
+        ok "SSH SFTP chroot already configured for ${sftp_user}"
+        return
+    fi
+
+    # Ensure ChrootDirectory parent is owned by root (SSH requirement)
+    chown root:root "${SITE_ROOT}" 2>/dev/null || true
+    chmod 755 "${SITE_ROOT}" 2>/dev/null || true
+
+    # Append Match block
+    cat >> "$sshd_config" <<SSHBLOCK
+
+# UnderHost: SFTP chroot for ${sftp_user}
+Match User ${sftp_user}
+    ChrootDirectory ${SITE_ROOT}
+    ForceCommand internal-sftp
+    AllowTcpForwarding no
+    X11Forwarding no
+SSHBLOCK
+
+    # Validate and reload
+    if sshd -t 2>/dev/null; then
+        systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+        ok "SSH reloaded with SFTP chroot for ${sftp_user}"
+    else
+        warn "SSH config validation failed — check /etc/ssh/sshd_config"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 _ftp_vsftpd_tls() {
-    step "Installing vsftpd (FTP with TLS)"
+    info "Installing vsftpd for FTP-TLS"
 
     case "$PKG_MGR" in
-        apt) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq vsftpd ;;
-        dnf) dnf -y -q install vsftpd ;;
+        apt) DEBIAN_FRONTEND=noninteractive apt-get install -y -q vsftpd &>/dev/null ;;
+        dnf) dnf install -y vsftpd &>/dev/null ;;
     esac
 
-    local ftp_user="${DOMAIN//./_}_ftp"
-    ftp_user="${ftp_user:0:32}"
+    local site_user="${DOMAIN//./_}"
+    site_user="${site_user:0:32}"
+    local ftp_user="${site_user}_ftp"
     local ftp_pass
     ftp_pass="$(gen_pass 20)"
-    FTP_USER="$ftp_user"
-    FTP_PASS="$ftp_pass"
 
-    if ! id "$ftp_user" &>/dev/null; then
-        useradd -m -d "${SITE_ROOT}" -s /bin/bash \
-            -c "FTP user for ${DOMAIN}" "$ftp_user"
-    fi
+    useradd -m -s /usr/sbin/nologin \
+        -d "${SITE_ROOT}" \
+        -c "FTP user for ${DOMAIN}" \
+        "$ftp_user" 2>/dev/null || true
     echo "${ftp_user}:${ftp_pass}" | chpasswd
-    chown -R "${ftp_user}:${ftp_user}" "${SITE_ROOT}"
-    chmod 755 "${SITE_ROOT}"
 
-    # Self-signed TLS cert for vsftpd (if no LE cert yet)
-    local ssl_cert="/etc/ssl/certs/vsftpd-${DOMAIN}.pem"
-    local ssl_key="/etc/ssl/private/vsftpd-${DOMAIN}.key"
+    # Generate self-signed cert for vsftpd (Certbot cert will be better if available)
+    local ssl_cert_path="/etc/ssl/certs/vsftpd.pem"
+    local ssl_key_path="/etc/ssl/private/vsftpd.key"
     if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
-        ssl_cert="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
-        ssl_key="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+        ssl_cert_path="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+        ssl_key_path="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+        info "Using Let's Encrypt certificate for FTP-TLS"
     else
-        openssl req -x509 -nodes -days 3650 \
-            -newkey rsa:2048 \
-            -keyout "$ssl_key" \
-            -out "$ssl_cert" \
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout "$ssl_key_path" \
+            -out "$ssl_cert_path" \
             -subj "/CN=${DOMAIN}" &>/dev/null
+        info "Self-signed certificate generated for FTP-TLS"
     fi
 
-    cat > /etc/vsftpd/vsftpd.conf <<VSFTPD
-# UnderHost vsftpd — FTPS configuration for ${DOMAIN}
+    cat > /etc/vsftpd.conf <<VSFTPD
+# UnderHost vsftpd config — FTP with TLS
 listen=YES
 listen_ipv6=NO
+anonymous_enable=NO
 local_enable=YES
 write_enable=YES
 local_umask=022
-dirmessage_enable=YES
-use_localtime=YES
-xferlog_enable=YES
-connect_from_port_20=YES
-
-# Chroot / isolation
 chroot_local_user=YES
-allow_writeable_chroot=NO
-secure_chroot_dir=/var/run/vsftpd/empty
-
-# No anonymous access
-anonymous_enable=NO
-no_anon_password=YES
-
-# TLS settings (FTPS)
+allow_writeable_chroot=YES
+pam_service_name=vsftpd
+userlist_enable=YES
+userlist_file=/etc/vsftpd.userlist
+userlist_deny=NO
+# TLS
 ssl_enable=YES
-ssl_tlsv1=NO
-ssl_sslv2=NO
-ssl_sslv3=NO
-require_ssl_reuse=NO
-ssl_ciphers=HIGH
-rsa_cert_file=${ssl_cert}
-rsa_private_key_file=${ssl_key}
+allow_anon_ssl=NO
 force_local_data_ssl=YES
 force_local_logins_ssl=YES
-
+ssl_tlsv1=YES
+ssl_sslv2=NO
+ssl_sslv3=NO
+rsa_cert_file=${ssl_cert_path}
+rsa_private_key_file=${ssl_key_path}
 # Passive mode
 pasv_enable=YES
 pasv_min_port=40000
 pasv_max_port=50000
-
-# PAM
-pam_service_name=vsftpd
-
-# User isolation
-user_sub_token=\$USER
-local_root=${SITE_ROOT}
+# Logging
+xferlog_enable=YES
+xferlog_file=/var/log/vsftpd.log
 VSFTPD
 
-    mkdir -p /var/run/vsftpd/empty
-    chmod 755 /var/run/vsftpd/empty
+    echo "$ftp_user" > /etc/vsftpd.userlist
 
-    systemctl enable vsftpd --now 2>/dev/null
-    ok "vsftpd (FTPS) configured for user '${ftp_user}'"
-    info "Connect via FTP client using explicit TLS to ${DOMAIN}:21"
-}
+    systemctl enable --now vsftpd 2>/dev/null \
+        && ok "vsftpd (FTP-TLS) enabled" \
+        || warn "Could not start vsftpd"
 
-# ---------------------------------------------------------------------------
-# Legacy unencrypted FTP (strongly discouraged)
-# ---------------------------------------------------------------------------
-_ftp_vsftpd_legacy() {
-    _ftp_vsftpd_tls
-    # Flip off TLS requirement
-    sed -i 's/^ssl_enable=YES/ssl_enable=NO/' /etc/vsftpd/vsftpd.conf
-    sed -i 's/^force_local_data_ssl=YES/force_local_data_ssl=NO/' /etc/vsftpd/vsftpd.conf
-    sed -i 's/^force_local_logins_ssl=YES/force_local_logins_ssl=NO/' /etc/vsftpd/vsftpd.conf
-    systemctl restart vsftpd 2>/dev/null || true
-    warn "Legacy unencrypted FTP is active. This is insecure. Use SFTP or FTPS in production."
+    FTP_USER="$ftp_user"
+    FTP_PASS="$ftp_pass"
+
+    ok "FTP-TLS user created: ${ftp_user}"
+    info "  FTP host: ${DOMAIN}:21 (Explicit TLS required)"
 }

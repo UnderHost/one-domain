@@ -203,3 +203,104 @@ STAGINGSUBDIR
     ok "Staging created at ${DOMAIN}/staging"
     info "  HTTP auth: staging / ${htpasswd_pass}"
 }
+
+# ---------------------------------------------------------------------------
+# Push staging → production
+staging_push() {
+    local domain="${1:-$DOMAIN}"
+    [[ -z "$domain" ]] && die "Usage: install staging-push domain.com"
+    _validate_domain "$domain"
+
+    local staging_root="/var/www/staging.${domain}"
+    local prod_root="/var/www/${domain}"
+
+    [[ -d "$staging_root" ]] || die "Staging not found: ${staging_root}"
+    [[ -d "$prod_root"    ]] || die "Production root not found: ${prod_root}"
+
+    section_banner "Staging Push → Production: ${domain}"
+    warn "This will overwrite production files at ${prod_root}"
+    warn "A backup of production will be taken first."
+    prompt_yn "Proceed with staging → production push?" "n" \
+        || { info "Cancelled."; return 0; }
+
+    # Backup production first
+    local backup_dir="/root/prod_backup_${domain//\./-}_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
+    rsync -a "${prod_root}/" "${backup_dir}/" && ok "Production backed up to: ${backup_dir}"
+
+    # Push staging files to production (exclude wp-config.php — keep prod DB creds)
+    step "Syncing staging files → production"
+    rsync -a --delete \
+        --exclude 'wp-config.php' \
+        --exclude '.git' \
+        "${staging_root}/" "${prod_root}/"
+    ok "Files synced staging → production"
+
+    # URL search-replace in production DB
+    if command -v wp &>/dev/null; then
+        step "Updating URLs in production database"
+        HOME=/root wp --path="${prod_root}" --allow-root \
+            search-replace "https://staging.${domain}" "https://${domain}" \
+            --all-tables --precise --report-changed-only 2>/dev/null \
+            && ok "URLs updated in production DB" || warn "search-replace had warnings"
+    fi
+
+    # Flush caches
+    HOME=/root wp --path="${prod_root}" --allow-root cache flush 2>/dev/null && ok "Cache flushed" || true
+
+    ok "Staging pushed to production. Backup at: ${backup_dir}"
+}
+
+# ---------------------------------------------------------------------------
+# Pull production → staging (refresh staging)
+staging_pull() {
+    local domain="${1:-$DOMAIN}"
+    [[ -z "$domain" ]] && die "Usage: install staging-pull domain.com"
+    _validate_domain "$domain"
+
+    local prod_root="/var/www/${domain}"
+    local staging_root="/var/www/staging.${domain}"
+    local staging_domain="staging.${domain}"
+
+    [[ -d "$prod_root"    ]] || die "Production root not found: ${prod_root}"
+    [[ -d "$staging_root" ]] || die "Staging not found: ${staging_root} — run install first"
+
+    section_banner "Staging Pull (Refresh) from Production: ${domain}"
+    prompt_yn "This will overwrite staging with production data. Continue?" "y" \
+        || { info "Cancelled."; return 0; }
+
+    step "Syncing production files → staging"
+    rsync -a --delete \
+        --exclude 'wp-config.php' \
+        --exclude '.git' \
+        "${prod_root}/" "${staging_root}/"
+    ok "Files synced production → staging"
+
+    # Clone production DB into staging DB
+    if command -v wp &>/dev/null && [[ -f "${staging_root}/wp-config.php" ]]; then
+        step "Refreshing staging database from production"
+        local prod_db
+        prod_db="$(grep "DB_NAME" "${prod_root}/wp-config.php" | grep -oP "'\K[^']+" | head -1)"
+        local stg_db
+        stg_db="$(grep "DB_NAME" "${staging_root}/wp-config.php" | grep -oP "'\K[^']+" | head -1)"
+
+        if [[ -n "$prod_db" && -n "$stg_db" ]]; then
+            local db_root_pass
+            db_root_pass="$(prompt_pass "MariaDB root password")"
+            local dump
+            dump="$(mktemp --suffix=.sql)"
+            mysqldump -u root -p"${db_root_pass}" "${prod_db}" > "$dump" \
+                && mysql -u root -p"${db_root_pass}" "${stg_db}" < "$dump" \
+                && ok "Staging DB refreshed from production"
+            rm -f "$dump"
+
+            # Fix URLs in staging DB
+            HOME=/root wp --path="${staging_root}" --allow-root \
+                search-replace "https://${domain}" "https://${staging_domain}" \
+                --all-tables --precise --report-changed-only 2>/dev/null \
+                && ok "URLs updated in staging DB" || warn "search-replace had warnings"
+        fi
+    fi
+
+    ok "Staging refreshed from production: https://${staging_domain}"
+}
