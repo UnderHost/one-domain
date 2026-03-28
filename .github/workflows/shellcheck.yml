@@ -2,9 +2,9 @@ name: ShellCheck
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, release/2026.4.0 ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, release/2026.4.0 ]
 
 jobs:
   shellcheck:
