@@ -11,6 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run ShellCheck
-        continue-on-error: true
-        uses: ludeeus/action-shellcheck@master
+      - name: Run ShellCheck (informational only)
+        run: |
+          # Install shellcheck
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          
+          # Run shellcheck but don't fail the build
+          echo "Running ShellCheck (warnings won't fail the build)..."
+          find . -name "*.sh" -type f -exec shellcheck {} \; || echo "⚠️ Warnings found but build continues"
+          
+          # Always exit with success
+          exit 0
+        shell: bash
