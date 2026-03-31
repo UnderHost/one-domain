@@ -7,10 +7,6 @@ Versioning follows `YYYY.MINOR.PATCH`.
 
 ---
 
-## [Unreleased]
-
----
-
 ## [2026.3.0] — 2026-03-28
 
 ### Security
@@ -89,11 +85,13 @@ Versioning follows `YYYY.MINOR.PATCH`.
 
 ---
 
-[Unreleased]: https://github.com/UnderHost/one-domain/compare/v2026.3.0...HEAD
+[released]: https://github.com/UnderHost/one-domain/compare/v2026.3.0...HEAD
 [2026.3.0]: https://github.com/UnderHost/one-domain/compare/v2026.2.0...v2026.3.0
 [2026.2.0]: https://github.com/UnderHost/one-domain/releases/tag/v2026.2.0
 
 ---
+
+## [Unreleased-beta]
 
 ## [2026.4.0] — 2026-03-28
 
